@@ -35,6 +35,23 @@ pub fn with_guard(guard: Guard) -> impl Filter<Extract = (Guard,), Error = Infal
     warp::any().map(move || guard.clone())
 }
 
+/// 现成的项目图标过滤器。
+///
+/// ```no_run
+/// # #[cfg(feature = "warp")]
+/// # {
+/// use encryptable::integrations::warp::pet;
+///
+/// let route = pet();
+/// # let _ = route;
+/// # }
+/// ```
+pub fn pet() -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
+    warp::path("pet.svg").map(|| {
+        warp::reply::with_header(crate::pet::svg(), "content-type", crate::pet::CONTENT_TYPE)
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -83,5 +100,27 @@ mod tests {
 
         assert_eq!(warp::test::request().filter(&route_a).await.unwrap(), 1);
         assert_eq!(warp::test::request().filter(&route_b).await.unwrap(), 1);
+    }
+
+    #[tokio::test]
+    async fn pet_filter_serves_the_artwork() {
+        let res = warp::test::request().path("/pet.svg").reply(&pet()).await;
+
+        assert_eq!(res.status(), 200);
+        assert_eq!(
+            res.headers()
+                .get("content-type")
+                .and_then(|v| v.to_str().ok()),
+            Some("image/svg+xml"),
+            "缺了 Content-Type，浏览器会把 SVG 当纯文本渲染"
+        );
+        assert_eq!(res.body(), crate::pet::svg().as_bytes());
+    }
+
+    /// 路径不匹配时应当 404，而不是把形象吐给所有路径。
+    #[tokio::test]
+    async fn pet_filter_does_not_answer_other_paths() {
+        let res = warp::test::request().path("/other").reply(&pet()).await;
+        assert_eq!(res.status(), 404);
     }
 }

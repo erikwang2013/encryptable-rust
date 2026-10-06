@@ -56,6 +56,22 @@ impl<'r> FromRequest<'r> for Guard {
     }
 }
 
+/// 现成的项目图标路由。
+///
+/// ```no_run
+/// # #[cfg(feature = "rocket")]
+/// # {
+/// use rocket::routes;
+/// use encryptable::integrations::rocket::pet;
+///
+/// let rocket = rocket::build().mount("/", routes![pet]);
+/// # }
+/// ```
+#[rocket::get("/pet.svg")]
+pub fn pet() -> (rocket::http::ContentType, &'static str) {
+    (rocket::http::ContentType::SVG, crate::pet::svg())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -143,5 +159,20 @@ mod tests {
 
         let res = client.get("/encrypt").dispatch();
         assert_eq!(res.status(), Status::InternalServerError);
+    }
+
+    #[test]
+    fn pet_route_serves_the_artwork() {
+        let rocket = rocket::build().mount("/", routes![pet]);
+        let client = Client::tracked(rocket).expect("rocket 应当能启动");
+
+        let res = client.get("/pet.svg").dispatch();
+        assert_eq!(res.status(), Status::Ok);
+        assert_eq!(
+            res.content_type().map(|c| c.to_string()),
+            Some("image/svg+xml".to_owned()),
+            "缺了 Content-Type，浏览器会把 SVG 当纯文本渲染"
+        );
+        assert_eq!(res.into_string().unwrap(), crate::pet::svg());
     }
 }

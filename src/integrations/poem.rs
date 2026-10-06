@@ -43,6 +43,26 @@ impl<'a> FromRequest<'a> for Guard {
     }
 }
 
+/// 现成的项目图标处理器。
+///
+/// ```no_run
+/// # #[cfg(feature = "poem")]
+/// # {
+/// use poem::{Route, get};
+/// use encryptable::integrations::poem::pet;
+///
+/// let app = Route::new().at("/pet.svg", get(pet));
+/// # }
+/// ```
+// poem 的处理器要过 `#[handler]` 宏才能实现 `IntoEndpoint` —— 少了它，
+// `Route::at(.., get(pet))` 直接编译不过。
+#[poem::handler]
+pub async fn pet() -> poem::Response {
+    poem::Response::builder()
+        .content_type(crate::pet::CONTENT_TYPE)
+        .body(crate::pet::svg())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -87,5 +107,27 @@ mod tests {
 
         let extracted = extract(&req).await.unwrap();
         assert_eq!(extracted.decrypt_text(&token).unwrap(), "共享");
+    }
+
+    #[tokio::test]
+    async fn pet_handler_serves_the_artwork() {
+        use poem::Endpoint;
+
+        let app = poem::Route::new().at("/pet.svg", poem::get(pet));
+        let req = Request::builder()
+            .uri(poem::http::Uri::from_static("/pet.svg"))
+            .finish();
+        let res = app.get_response(req).await;
+
+        assert_eq!(res.status(), poem::http::StatusCode::OK);
+        assert_eq!(
+            res.content_type().map(|c| c.to_string()),
+            Some("image/svg+xml".to_owned()),
+            "缺了 Content-Type，浏览器会把 SVG 当纯文本渲染"
+        );
+        assert_eq!(
+            res.into_body().into_string().await.unwrap(),
+            crate::pet::svg()
+        );
     }
 }

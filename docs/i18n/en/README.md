@@ -67,7 +67,35 @@ async fn pet_icon() -> Html<String> {
 }
 ```
 
-It is on the command line too: `encryptable pet` prints the artwork, and both `encryptable --version` and `--help` carry it.
+It is on the command line too: `encryptable pet` prints the artwork, and both `encryptable --version` and `--help` carry it. CLI errors also carry the pet, **but only on an interactive terminal** — scripted and CI runs that redirect stderr into a log do not suddenly get seven lines of ASCII.
+
+#### Built-in icon endpoints
+
+Every framework adapter ships a ready-made handler: mount it and you have the project icon at `Content-Type: image/svg+xml`, with nothing to write yourself.
+
+```rust
+// axum (bee-rust and e-cat use this one too — both sit on axum)
+Router::new().route("/pet.svg", get(encryptable::integrations::axum::pet))
+
+// actix-web
+App::new().route("/pet.svg", web::get().to(encryptable::integrations::actix::pet))
+
+// rocket
+rocket::build().mount("/", routes![encryptable::integrations::rocket::pet])
+
+// poem
+Route::new().at("/pet.svg", get(encryptable::integrations::poem::pet))
+
+// salvo
+Router::new().get(encryptable::integrations::salvo::pet)
+
+// warp
+encryptable::integrations::warp::pet()      // the /pet.svg path is already bound
+```
+
+salvo additionally has `write_pet(&mut Response)`, which does not depend on its handler machinery — anything holding a `&mut Response` can use it.
+
+`Content-Type` is the one thing this endpoint is easy to get wrong: without it the browser renders the SVG as plain text and the user sees a screenful of XML instead of the padlock with the key ring — so every adapter's test pins that header.
 
 `docs/pet.svg` **must not** go into Cargo's `exclude` — `include_str!` reads it at compile time, and excluding it fails the build on the spot (`cargo package` errors out outright rather than silently shipping without it).
 
@@ -109,6 +137,8 @@ encryptable-rust/
 │   ├── diagrams/zh-CN/        Chinese diagrams: architecture · features · request-lifecycle · lifecycle
 │   ├── diagrams/en/           the same diagrams in English
 │   ├── i18n/en/README.md      English README
+│   ├── social-preview.png     1280×640 social preview card (upload in repo settings; not shipped in the crate)
+│   ├── social-preview.svg     its editable source
 │   ├── alipay.png             donation QR code
 │   └── weixinpay.png          donation QR code
 └── Cargo.toml                 default dependencies are only aes-gcm / aes / zeroize / base64

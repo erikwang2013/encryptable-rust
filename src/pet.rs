@@ -44,6 +44,12 @@ pub const SVG: &str = include_str!("../docs/pet.svg");
 /// 形象 SVG 的字节数。下游要给它留缓冲区时用得着。
 pub const SVG_LEN: usize = SVG.len();
 
+/// 形象的 MIME 类型。
+///
+/// 挂成 HTTP 端点时必须带上它 —— 少了这个头，浏览器会把它当成纯文本渲染，
+/// 用户看到的是一屏 XML 而不是那只挂钥匙环的锁。
+pub const CONTENT_TYPE: &str = "image/svg+xml";
+
 /// SVG 形象，函数形式。
 ///
 /// 与常量 [`SVG`] 是同一份东西，这个形式存在的意义是让调用点读起来像

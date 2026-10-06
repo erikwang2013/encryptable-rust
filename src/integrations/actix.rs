@@ -65,6 +65,23 @@ impl FromRequest for Guard {
     }
 }
 
+/// 现成的项目图标处理器。
+///
+/// ```no_run
+/// # #[cfg(feature = "actix-web")]
+/// # {
+/// use actix_web::{App, web};
+/// use encryptable::integrations::actix::pet;
+///
+/// let app = App::new().route("/pet.svg", web::get().to(pet));
+/// # }
+/// ```
+pub async fn pet() -> actix_web::HttpResponse {
+    actix_web::HttpResponse::Ok()
+        .content_type(crate::pet::CONTENT_TYPE)
+        .body(crate::pet::svg())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -130,5 +147,27 @@ mod tests {
         assert_eq!(extracted.decrypt_text(&token).unwrap(), "x");
         // 原 Arc 与 Data 里的仍是同一份
         assert_eq!(Arc::strong_count(&shared), 2);
+    }
+
+    #[actix_web::test]
+    async fn pet_handler_serves_the_artwork() {
+        let app = actix_web::test::init_service(
+            actix_web::App::new().route("/pet.svg", actix_web::web::get().to(pet)),
+        )
+        .await;
+
+        let req = test::TestRequest::get().uri("/pet.svg").to_request();
+        let res = test::call_service(&app, req).await;
+
+        assert!(res.status().is_success());
+        assert_eq!(
+            res.headers()
+                .get(actix_web::http::header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok()),
+            Some("image/svg+xml")
+        );
+
+        let body = test::read_body(res).await;
+        assert_eq!(std::str::from_utf8(&body).unwrap(), crate::pet::svg());
     }
 }

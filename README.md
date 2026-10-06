@@ -67,7 +67,35 @@ async fn pet_icon() -> Html<String> {
 }
 ```
 
-命令行里也有：`encryptable pet` 打印形象，`encryptable --version` 与 `--help` 都会带上它。
+命令行里也有：`encryptable pet` 打印形象，`encryptable --version` 与 `--help` 都会带上它。CLI 报错时也会附上宠物，**但只在交互式终端里**——脚本与 CI 把 stderr 重定向进日志时不会多出七行 ASCII。
+
+#### 内置的图标端点
+
+每个框架适配层都带一个现成的处理器，挂上就有 `Content-Type: image/svg+xml` 的项目图标，不用自己写：
+
+```rust
+// axum（bee-rust 与 e-cat 也用这个，它们都在 axum 之上）
+Router::new().route("/pet.svg", get(encryptable::integrations::axum::pet))
+
+// actix-web
+App::new().route("/pet.svg", web::get().to(encryptable::integrations::actix::pet))
+
+// rocket
+rocket::build().mount("/", routes![encryptable::integrations::rocket::pet])
+
+// poem
+Route::new().at("/pet.svg", get(encryptable::integrations::poem::pet))
+
+// salvo
+Router::new().get(encryptable::integrations::salvo::pet)
+
+// warp
+encryptable::integrations::warp::pet()      // 已绑好 /pet.svg 路径
+```
+
+salvo 另有一个 `write_pet(&mut Response)`，不依赖它的处理器机制，任何拿得到 `&mut Response` 的地方都能用。
+
+`Content-Type` 是这个端点唯一容易做错的地方：少了它浏览器会把 SVG 当纯文本渲染，用户看到的是一屏 XML 而不是那只挂钥匙环的锁——所以每个适配层的测试都盯着这个头。
 
 `docs/pet.svg` **不能**进 Cargo 的 `exclude` —— `include_str!` 在编译期读它，排掉就当场编译失败（`cargo package` 会直接报错，不会静默漏发）。
 
@@ -109,6 +137,8 @@ encryptable-rust/
 │   ├── diagrams/zh-CN/        中文版图示：architecture · features · request-lifecycle · lifecycle
 │   ├── diagrams/en/           英文版同名图示
 │   ├── i18n/en/README.md      English README
+│   ├── social-preview.png     1280×640 社交预览图（仓库设置里上传，不进 crate 包）
+│   ├── social-preview.svg     它的可编辑源文件
 │   ├── alipay.png             打赏码
 │   └── weixinpay.png          打赏码
 └── Cargo.toml                 默认依赖只有 aes-gcm / aes / zeroize / base64

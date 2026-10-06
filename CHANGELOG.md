@@ -5,6 +5,35 @@
 本文件记录本 crate 的显著变更，格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.2.0] - 2026-10-07
+
+宠物再往前一步：从「库里有这个 API」变成「框架里挂上就有」，并把四张图里的抽象图形换成真实形象。
+
+### 新增
+
+- **每个框架适配层的内置图标处理器** —— 挂上即有 `Content-Type: image/svg+xml` 的项目图标：
+  `integrations::axum::pet` · `integrations::actix::pet` · `integrations::rocket::pet`
+  （自带 `#[get("/pet.svg")]`）· `integrations::poem::pet` ·
+  `integrations::salvo::pet` · `integrations::warp::pet`（已绑 `/pet.svg` 路径）。
+  bee-rust 与 e-cat 复用 axum 的那一个。
+- `integrations::salvo::write_pet(&mut Response)` —— 不依赖 salvo 处理器机制的裸写入版本。
+- `pet::CONTENT_TYPE` —— `image/svg+xml`。
+
+### 变更
+
+- 四张图示（架构 / 功能 / 请求周期 / 生命周期，中英各一）里的抽象图形换成**真实的
+  `docs/pet.svg` 形象**：`lifecycle.svg` 第三条泳道原本手绘的钥匙环改为真宠物，
+  其余三张加了角落形象。
+- CLI 报错时附上宠物 —— **仅在交互式终端**（`stderr` 是 TTY 时）。脚本与 CI
+  把 stderr 重定向进日志的场景不会多出七行 ASCII。
+- 新增 `docs/social-preview.png`（1280×640）与它的可编辑源文件
+  `docs/social-preview.svg`，在 GitHub 仓库设置里作为社交预览图上传。
+  两者都加进了 Cargo 的 `exclude` —— 纯仓库资产，不该让下游下载。
+
+### 说明
+
+本版**无破坏性变更**。按语义化版本，新增公开 API 属次要版本，故为 1.2.0。
+
 ## [1.1.0] - 2026-10-07
 
 把项目宠物从「文档里的图」变成 crate 的正式一部分，并修掉英文文档里的几处不自然。
@@ -93,5 +122,6 @@
 
 运行时只有 4 个：`aes-gcm` · `aes` · `zeroize` · `base64`。
 
+[1.2.0]: https://github.com/erikwang2013/encryptable-rust/releases/tag/v1.2.0
 [1.1.0]: https://github.com/erikwang2013/encryptable-rust/releases/tag/v1.1.0
 [1.0.0]: https://github.com/erikwang2013/encryptable-rust/releases/tag/v1.0.0

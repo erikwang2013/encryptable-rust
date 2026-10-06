@@ -2,7 +2,7 @@
 
 [package]
 name = "encryptable-rust"
-version = "1.1.0"
+version = "1.2.0"
 edition = "2024"
 rust-version = "1.88"
 description = "为敏感字段提供「可检索的匿名化 / 加密」能力：写入数据库前加密，读出时解密，并可生成与 MySQL / PostgreSQL 兼容的 SQL 片段"
@@ -21,6 +21,10 @@ exclude = [
     "ruvector.db",
     ".swarm",
     ".claude-flow",
+    # 社交预览图（GitHub 仓库设置里上传用），纯仓库资产、包内无引用，
+    # 167KB 的 PNG 不该让每个下游都下载一遍。
+    "docs/social-preview.png",
+    "docs/social-preview.svg",
 ]
 
 [lib]

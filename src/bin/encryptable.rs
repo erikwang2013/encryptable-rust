@@ -89,14 +89,28 @@ fn main() -> ExitCode {
     match run(&args) {
         Ok(()) => ExitCode::SUCCESS,
         Err(CliError::Usage(msg)) => {
+            eprint_pet();
             eprintln!("用法错误：{msg}");
             eprintln!("\n用 `encryptable --help` 查看完整说明。");
             ExitCode::from(EXIT_USAGE)
         }
         Err(CliError::Crypto(e)) => {
+            eprint_pet();
             eprintln!("错误：{e}");
             ExitCode::from(EXIT_CRYPTO)
         }
+    }
+}
+
+/// 报错时附上项目宠物 —— 但**只在交互式终端里**。
+///
+/// 脚本与 CI 会把 stderr 重定向进日志，往里塞七行 ASCII 图只会碍事；
+/// `IsTerminal` 正好把这两种场景分开（同 `--color=auto` 的思路）。
+/// 想在任何情况下都要形象，用 `encryptable pet`。
+fn eprint_pet() {
+    if std::io::IsTerminal::is_terminal(&std::io::stderr()) {
+        eprintln!("{}", encryptable::pet::ASCII);
+        eprintln!();
     }
 }
 

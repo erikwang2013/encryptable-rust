@@ -59,6 +59,29 @@ where
     }
 }
 
+/// 现成的项目图标处理器：挂到任意路径上即可对外提供项目宠物。
+///
+/// ```no_run
+/// # #[cfg(feature = "axum")]
+/// # {
+/// use axum::{Router, routing::get};
+/// use encryptable::integrations::axum::pet;
+///
+/// let app: Router = Router::new().route("/pet.svg", get(pet));
+/// # }
+/// ```
+///
+/// 带上 `Content-Type: image/svg+xml` —— 少了这个头，浏览器会把 SVG 当纯文本，
+/// 用户看到的是一屏 XML 而不是那只挂钥匙环的锁。
+///
+/// bee-rust 与 e-cat 都建在 axum 之上，这个处理器同样能挂到它们上面。
+pub async fn pet() -> impl axum::response::IntoResponse {
+    (
+        [(axum::http::header::CONTENT_TYPE, crate::pet::CONTENT_TYPE)],
+        crate::pet::svg(),
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -171,5 +194,38 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(&body[..], "共享".as_bytes());
+    }
+
+    /// 宠物端点真的能挂到路由上，并且带着正确的 MIME 类型。
+    #[tokio::test]
+    async fn pet_handler_serves_the_artwork() {
+        let app: Router = Router::new().route("/pet.svg", get(pet));
+
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri("/pet.svg")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            response
+                .headers()
+                .get(axum::http::header::CONTENT_TYPE)
+                .and_then(|v| v.to_str().ok()),
+            Some("image/svg+xml"),
+            "缺了 Content-Type，浏览器会把 SVG 当纯文本渲染"
+        );
+
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let text = std::str::from_utf8(&body).unwrap();
+        assert!(text.starts_with("<svg"), "返回的不是 SVG");
+        assert_eq!(text, crate::pet::svg(), "端点给的不是那一份形象");
     }
 }
