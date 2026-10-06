@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1020 620" role="img" aria-labelledby="t d" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif">
+  <title id="t">Feature design</title>
+  <desc id="d">Nine feature cards: app-side AEAD, deterministic DB-side encryption, SQL fragment generation, key rotation, typed envelope, two-format isolation, 8 framework integrations, CLI tool, and the project pet Locky. The footer notes there are only 4 default dependencies.</desc>
+
+  <rect x="0.5" y="0.5" width="1019" height="619" rx="18" fill="#F8FAFF" stroke="#C7D2FE" stroke-width="1"/>
+
+  <text x="510" y="48" text-anchor="middle" font-size="21" font-weight="700" fill="#312E81">Feature design</text>
+  <text x="510" y="74" text-anchor="middle" font-size="13" fill="#64748B">nine core capabilities · 功能设计</text>
+
+  <!-- 1. app-side AEAD -->
+  <rect x="40" y="100" width="298" height="120" rx="14" fill="#FFFFFF" stroke="#C7D2FE" stroke-width="1.5"/>
+  <rect x="60" y="120" width="48" height="5" rx="2.5" fill="#10B981"/>
+  <text x="60" y="148" font-size="15" font-weight="700" fill="#312E81">App-side AEAD encryption</text>
+  <text x="60" y="178" font-size="12" fill="#475569">AES-256-GCM · random 96-bit nonce</text>
+  <text x="60" y="198" font-size="12" fill="#64748B">the auth tag proves integrity</text>
+
+  <!-- 2. deterministic DB encryption -->
+  <rect x="361" y="100" width="298" height="120" rx="14" fill="#FFFFFF" stroke="#C7D2FE" stroke-width="1.5"/>
+  <rect x="381" y="120" width="48" height="5" rx="2.5" fill="#5B21B6"/>
+  <text x="381" y="148" font-size="15" font-weight="700" fill="#312E81">Deterministic DB encryption</text>
+  <text x="381" y="178" font-size="12" fill="#475569">AES-256-ECB · same plaintext → same</text>
+  <text x="381" y="198" font-size="12" fill="#64748B">ciphertext · bindable into WHERE</text>
+
+  <!-- 3. SQL fragment generation -->
+  <rect x="682" y="100" width="298" height="120" rx="14" fill="#FFFFFF" stroke="#C7D2FE" stroke-width="1.5"/>
+  <rect x="702" y="120" width="48" height="5" rx="2.5" fill="#5B21B6"/>
+  <text x="702" y="148" font-size="15" font-weight="700" fill="#312E81">SQL fragment generation</text>
+  <text x="702" y="178" font-size="12" fill="#475569">MySQL + PostgreSQL dialects</text>
+  <text x="702" y="198" font-size="12" fill="#64748B">column-name whitelist</text>
+
+  <!-- 4. key rotation -->
+  <rect x="40" y="242" width="298" height="120" rx="14" fill="#FFFFFF" stroke="#C7D2FE" stroke-width="1.5"/>
+  <rect x="60" y="262" width="48" height="5" rx="2.5" fill="#5B21B6"/>
+  <text x="60" y="290" font-size="15" font-weight="700" fill="#312E81">Key rotation</text>
+  <text x="60" y="320" font-size="12" fill="#475569">primary + previous_keys ring</text>
+  <text x="60" y="340" font-size="12" fill="#64748B">rotate_to_current_key · no downtime</text>
+
+  <!-- 5. typed envelope -->
+  <rect x="361" y="242" width="298" height="120" rx="14" fill="#FFFFFF" stroke="#C7D2FE" stroke-width="1.5"/>
+  <rect x="381" y="262" width="48" height="5" rx="2.5" fill="#5B21B6"/>
+  <text x="381" y="290" font-size="15" font-weight="700" fill="#312E81">Typed envelope</text>
+  <text x="381" y="320" font-size="12" fill="#475569">one tag byte remembers the type</text>
+  <text x="381" y="340" font-size="12" fill="#64748B">no silent coercion</text>
+
+  <!-- 6. two-format isolation -->
+  <rect x="682" y="242" width="298" height="120" rx="14" fill="#FFFFFF" stroke="#C7D2FE" stroke-width="1.5"/>
+  <rect x="702" y="262" width="48" height="5" rx="2.5" fill="#5B21B6"/>
+  <text x="702" y="290" font-size="15" font-weight="700" fill="#312E81">Two-format isolation</text>
+  <text x="702" y="320" font-size="12" fill="#475569">0x01 app-side · 0x02 DB-side</text>
+  <text x="702" y="340" font-size="12" fill="#64748B">mixing the two is an error</text>
+
+  <!-- 7. framework integrations -->
+  <rect x="40" y="384" width="298" height="120" rx="14" fill="#FFFFFF" stroke="#C7D2FE" stroke-width="1.5"/>
+  <rect x="60" y="404" width="48" height="5" rx="2.5" fill="#5B21B6"/>
+  <text x="60" y="432" font-size="15" font-weight="700" fill="#312E81">8 framework integrations</text>
+  <text x="60" y="462" font-size="12" fill="#475569">axum · actix-web · rocket · poem</text>
+  <text x="60" y="482" font-size="12" fill="#64748B">salvo · warp · bee-rust · e-cat</text>
+
+  <!-- 8. CLI -->
+  <rect x="361" y="384" width="298" height="120" rx="14" fill="#FFFFFF" stroke="#C7D2FE" stroke-width="1.5"/>
+  <rect x="381" y="404" width="48" height="5" rx="2.5" fill="#5B21B6"/>
+  <text x="381" y="432" font-size="15" font-weight="700" fill="#312E81">CLI tool</text>
+  <text x="381" y="462" font-size="12" fill="#475569">keygen · encrypt · decrypt · rotate</text>
+  <text x="381" y="482" font-size="12" fill="#64748B">db-encrypt · db-decrypt · sql · pet</text>
+
+  <!-- 9. project pet -->
+  <rect x="682" y="384" width="298" height="120" rx="14" fill="#FFFFFF" stroke="#C7D2FE" stroke-width="1.5"/>
+  <rect x="702" y="404" width="48" height="5" rx="2.5" fill="#F59E0B"/>
+  <text x="702" y="432" font-size="15" font-weight="700" fill="#312E81">Project pet · Locky</text>
+  <text x="702" y="462" font-size="12" fill="#475569">pet::SVG inlined in the crate</text>
+  <text x="702" y="482" font-size="12" fill="#64748B">no external asset files</text>
+
+  <!-- footer -->
+  <rect x="40" y="528" width="940" height="52" rx="14" fill="#FFFBEB" stroke="#F59E0B" stroke-width="1.5"/>
+  <text x="510" y="560" text-anchor="middle" font-size="14" font-weight="600" fill="#92400E">only 4 default dependencies</text>
+</svg>

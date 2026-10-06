@@ -1,0 +1,235 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 1240" width="1100" height="1240" role="img" aria-labelledby="t d">
+  <title id="t">Lifecycle — Encryptable</title>
+  <desc id="d">Three lanes. The first is the value round-trip: plaintext → typed envelope → random nonce + AES-256-GCM → base64 → stored → read back → try every key on the ring → type restored, with a return arrow noting that strict mode errors instead of handing back the input. The second lane shows the two DB query paths: filtering (preferred, parameter binding, the key never enters SQL, the index still works) and reading plaintext (the decrypt_expr fragment embeds the master key and lands in slow-query logs). The third lane is key rotation in four steps, with Locky's key ring: one gold primary key and two grey retired keys.</desc>
+
+  <rect x="4" y="4" width="1092" height="1232" rx="16" fill="#F8FAFF" stroke="#C7D2FE" stroke-width="1.5"/>
+
+  <text x="30" y="50" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="20" font-weight="700" fill="#312E81">Lifecycle</text>
+  <text x="30" y="72" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12.5" fill="#5B21B6">value round-trip / the two DB query paths / key rotation in four steps</text>
+
+  <!-- ================= lane 1: value round-trip ================= -->
+  <rect x="30" y="113" width="4" height="20" rx="2" fill="#10B981"/>
+  <text x="44" y="129" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="15" font-weight="700" fill="#312E81">Value round-trip</text>
+
+  <g>
+    <rect x="30" y="150" width="116" height="120" rx="10" fill="#FFFFFF" stroke="#1E1B4B" stroke-width="1.6"/>
+    <text x="88" y="204" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="13" font-weight="700" fill="#312E81">plaintext</text>
+    <text x="88" y="226" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="11.5" fill="#94A3B8">in memory</text>
+  </g>
+  <path d="M146,210 H154" fill="none" stroke="#1E1B4B" stroke-width="1.5"/>
+  <path d="M161,210 l-7,-4 l0,8 z" fill="#1E1B4B"/>
+
+  <g>
+    <rect x="162" y="150" width="116" height="120" rx="10" fill="#FFFFFF" stroke="#1E1B4B" stroke-width="1.6"/>
+    <text x="220" y="193" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="13" font-weight="700" fill="#312E81">envelope</text>
+    <text x="220" y="210" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="11.5" fill="#1E1B4B">tag(1B)</text>
+    <text x="220" y="228" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="11.5" fill="#1E1B4B">‖payload</text>
+  </g>
+  <path d="M278,210 H286" fill="none" stroke="#1E1B4B" stroke-width="1.5"/>
+  <path d="M293,210 l-7,-4 l0,8 z" fill="#1E1B4B"/>
+
+  <g>
+    <rect x="294" y="150" width="116" height="120" rx="10" fill="#FFFFFF" stroke="#1E1B4B" stroke-width="1.6"/>
+    <text x="352" y="193" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="13" font-weight="700" fill="#312E81">random</text>
+    <text x="352" y="210" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="11.5" fill="#1E1B4B">nonce(12) +</text>
+    <text x="352" y="228" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="11.5" fill="#1E1B4B">AES-256-GCM</text>
+  </g>
+  <path d="M410,210 H418" fill="none" stroke="#1E1B4B" stroke-width="1.5"/>
+  <path d="M425,210 l-7,-4 l0,8 z" fill="#1E1B4B"/>
+
+  <g>
+    <rect x="426" y="150" width="116" height="120" rx="10" fill="#FFFFFF" stroke="#1E1B4B" stroke-width="1.6"/>
+    <text x="484" y="193" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="13" font-weight="700" fill="#312E81">base64</text>
+    <text x="484" y="210" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="11.5" fill="#1E1B4B">0x01‖nonce</text>
+    <text x="484" y="228" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="11.5" fill="#1E1B4B">‖ct‖tag)</text>
+  </g>
+  <path d="M542,210 H550" fill="none" stroke="#1E1B4B" stroke-width="1.5"/>
+  <path d="M557,210 l-7,-4 l0,8 z" fill="#1E1B4B"/>
+
+  <g>
+    <rect x="558" y="150" width="116" height="120" rx="10" fill="#DBE2FF" stroke="#1E1B4B" stroke-width="1.6"/>
+    <text x="616" y="196" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="13" font-weight="700" fill="#312E81">stored</text>
+    <text x="616" y="222" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="11.5" fill="#1E1B4B">ciphertext</text>
+  </g>
+  <path d="M674,210 H682" fill="none" stroke="#1E1B4B" stroke-width="1.5"/>
+  <path d="M689,210 l-7,-4 l0,8 z" fill="#1E1B4B"/>
+
+  <g>
+    <rect x="690" y="150" width="116" height="120" rx="10" fill="#DBE2FF" stroke="#1E1B4B" stroke-width="1.6"/>
+    <text x="748" y="196" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="13" font-weight="700" fill="#312E81">read back</text>
+    <text x="748" y="222" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="11.5" fill="#1E1B4B">the whole row</text>
+  </g>
+  <path d="M806,210 H814" fill="none" stroke="#1E1B4B" stroke-width="1.5"/>
+  <path d="M821,210 l-7,-4 l0,8 z" fill="#1E1B4B"/>
+
+  <g>
+    <rect x="822" y="150" width="116" height="120" rx="10" fill="#FFFFFF" stroke="#1E1B4B" stroke-width="1.6"/>
+    <text x="880" y="193" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="13" font-weight="700" fill="#312E81">try each</text>
+    <text x="880" y="210" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="11.5" fill="#1E1B4B">key on ring</text>
+  </g>
+  <path d="M938,210 H946" fill="none" stroke="#1E1B4B" stroke-width="1.5"/>
+  <path d="M953,210 l-7,-4 l0,8 z" fill="#1E1B4B"/>
+
+  <g>
+    <rect x="954" y="150" width="116" height="120" rx="10" fill="#10B981" stroke="#1E1B4B" stroke-width="1.6"/>
+    <text x="1012" y="196" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="13" font-weight="700" fill="#FFFFFF">restore</text>
+    <text x="1012" y="222" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="11.5" fill="#FFFFFF">the type</text>
+  </g>
+
+  <path d="M1012,270 V300 H88 V279" fill="none" stroke="#10B981" stroke-width="1.8"/>
+  <path d="M88,270 l-5,9 l10,0 z" fill="#10B981"/>
+  <text x="550" y="322" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">strict mode: failure is an error — never "return the input on failure"</text>
+
+  <line x1="30" y1="366" x2="1070" y2="366" stroke="#C7D2FE" stroke-width="1.2"/>
+
+  <!-- ================= lane 2: two DB query paths ================= -->
+  <rect x="30" y="402" width="4" height="20" rx="2" fill="#F59E0B"/>
+  <text x="44" y="418" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="15" font-weight="700" fill="#312E81">Two DB query paths</text>
+
+  <text x="30" y="452" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="13" font-weight="700" fill="#B45309">Filtering (preferred)</text>
+
+  <g>
+    <rect x="30" y="466" width="242" height="110" rx="12" fill="#FFFFFF" stroke="#1E1B4B" stroke-width="1.6"/>
+    <circle cx="58" cy="499" r="13" fill="#F59E0B"/>
+    <text x="58" y="504" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="13" font-weight="700" fill="#FFFFFF">1</text>
+    <text x="80" y="504" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="14" font-weight="700" fill="#312E81">encrypt(input)</text>
+    <text x="46" y="538" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">deterministic ciphertext</text>
+  </g>
+  <path d="M272,521 H288" fill="none" stroke="#1E1B4B" stroke-width="1.6"/>
+  <path d="M295,521 l-9,-5 l0,10 z" fill="#1E1B4B"/>
+
+  <g>
+    <rect x="296" y="466" width="242" height="110" rx="12" fill="#FFFFFF" stroke="#1E1B4B" stroke-width="1.6"/>
+    <circle cx="324" cy="499" r="13" fill="#F59E0B"/>
+    <text x="324" y="504" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="13" font-weight="700" fill="#FFFFFF">2</text>
+    <text x="346" y="504" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="14" font-weight="700" fill="#312E81">WHERE phone = ?</text>
+    <text x="312" y="538" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">bound as a parameter</text>
+  </g>
+  <path d="M538,521 H554" fill="none" stroke="#1E1B4B" stroke-width="1.6"/>
+  <path d="M561,521 l-9,-5 l0,10 z" fill="#1E1B4B"/>
+
+  <g>
+    <rect x="562" y="466" width="242" height="110" rx="12" fill="#FFFFFF" stroke="#1E1B4B" stroke-width="1.6"/>
+    <circle cx="590" cy="499" r="13" fill="#F59E0B"/>
+    <text x="590" y="504" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="13" font-weight="700" fill="#FFFFFF">3</text>
+    <text x="612" y="504" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="14" font-weight="700" fill="#312E81">key stays out of SQL</text>
+    <text x="578" y="538" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">no string building, no leak</text>
+  </g>
+  <path d="M804,521 H820" fill="none" stroke="#1E1B4B" stroke-width="1.6"/>
+  <path d="M827,521 l-9,-5 l0,10 z" fill="#1E1B4B"/>
+
+  <g>
+    <rect x="828" y="466" width="242" height="110" rx="12" fill="#DBE2FF" stroke="#1E1B4B" stroke-width="1.6"/>
+    <circle cx="856" cy="499" r="13" fill="#F59E0B"/>
+    <text x="856" y="504" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="13" font-weight="700" fill="#FFFFFF">4</text>
+    <text x="878" y="504" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="14" font-weight="700" fill="#312E81">index still works</text>
+    <text x="844" y="538" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">no index changes needed</text>
+  </g>
+
+  <text x="30" y="610" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="13" font-weight="700" fill="#B45309">Reading plaintext</text>
+
+  <g>
+    <rect x="30" y="624" width="330" height="110" rx="12" fill="#FFFFFF" stroke="#1E1B4B" stroke-width="1.6"/>
+    <text x="46" y="662" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="14" font-weight="700" fill="#312E81">decrypt_expr("phone")</text>
+    <text x="46" y="696" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">let the database decrypt the column</text>
+  </g>
+  <path d="M360,679 H376" fill="none" stroke="#1E1B4B" stroke-width="1.6"/>
+  <path d="M384,679 l-9,-5 l0,10 z" fill="#1E1B4B"/>
+
+  <g>
+    <rect x="385" y="624" width="330" height="110" rx="12" fill="#FFFFFF" stroke="#1E1B4B" stroke-width="1.6"/>
+    <text x="401" y="662" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="14" font-weight="700" fill="#312E81">decrypt in the SELECT list</text>
+    <text x="401" y="696" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">plaintext on the wire and in RAM</text>
+  </g>
+  <path d="M715,679 H731" fill="none" stroke="#1E1B4B" stroke-width="1.6"/>
+  <path d="M739,679 l-9,-5 l0,10 z" fill="#1E1B4B"/>
+
+  <g>
+    <rect x="740" y="624" width="330" height="110" rx="12" fill="#FFF1F2" stroke="#FB7185" stroke-width="1.6"/>
+    <path d="M766,644 L777,662 L755,662 Z" fill="#FB7185"/>
+    <rect x="764.5" y="649" width="3" height="7" rx="1.5" fill="#FFFFFF"/>
+    <rect x="764.5" y="658.5" width="3" height="3" rx="1.5" fill="#FFFFFF"/>
+    <text x="786" y="662" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="14" font-weight="700" fill="#BE123C">fragment embeds the master key</text>
+    <text x="756" y="692" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">lands in slow-query logs and</text>
+    <text x="756" y="712" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">pg_stat_statements</text>
+  </g>
+
+  <line x1="30" y1="756" x2="1070" y2="756" stroke="#C7D2FE" stroke-width="1.2"/>
+
+  <!-- ================= lane 3: key rotation in four steps ================= -->
+  <rect x="30" y="793" width="4" height="20" rx="2" fill="#94A3B8"/>
+  <text x="44" y="809" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="15" font-weight="700" fill="#312E81">Key rotation in four steps</text>
+
+  <g>
+    <rect x="30" y="830" width="230" height="130" rx="12" fill="#FFFFFF" stroke="#1E1B4B" stroke-width="1.6"/>
+    <circle cx="58" cy="858" r="13" fill="#F59E0B"/>
+    <text x="58" y="863" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="13" font-weight="700" fill="#FFFFFF">1</text>
+    <text x="80" y="863" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="15" font-weight="700" fill="#312E81">new primary key</text>
+    <text x="46" y="900" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">new writes use the new key</text>
+    <text x="46" y="922" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">old rows stay as they are</text>
+  </g>
+  <path d="M260,895 H280" fill="none" stroke="#1E1B4B" stroke-width="1.6"/>
+  <path d="M290,895 l-9,-5 l0,10 z" fill="#1E1B4B"/>
+
+  <g>
+    <rect x="300" y="830" width="230" height="130" rx="12" fill="#FFFFFF" stroke="#1E1B4B" stroke-width="1.6"/>
+    <circle cx="328" cy="858" r="13" fill="#94A3B8"/>
+    <text x="328" y="863" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="13" font-weight="700" fill="#FFFFFF">2</text>
+    <text x="350" y="863" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="15" font-weight="700" fill="#312E81">retire the old key</text>
+    <text x="316" y="900" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">move into previous_keys</text>
+    <text x="316" y="922" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">ring = [primary, …retired]</text>
+  </g>
+  <path d="M530,895 H550" fill="none" stroke="#1E1B4B" stroke-width="1.6"/>
+  <path d="M560,895 l-9,-5 l0,10 z" fill="#1E1B4B"/>
+
+  <g>
+    <rect x="570" y="830" width="230" height="130" rx="12" fill="#FFFFFF" stroke="#1E1B4B" stroke-width="1.6"/>
+    <circle cx="598" cy="858" r="13" fill="#94A3B8"/>
+    <text x="598" y="863" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="13" font-weight="700" fill="#FFFFFF">3</text>
+    <text x="620" y="863" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="15" font-weight="700" fill="#312E81">batch re-encrypt</text>
+    <text x="586" y="900" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">rotate_to_current_key()</text>
+    <text x="586" y="922" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">row by row, in background</text>
+  </g>
+  <path d="M800,895 H820" fill="none" stroke="#1E1B4B" stroke-width="1.6"/>
+  <path d="M830,895 l-9,-5 l0,10 z" fill="#1E1B4B"/>
+
+  <g>
+    <rect x="840" y="830" width="230" height="130" rx="12" fill="#FFFFFF" stroke="#1E1B4B" stroke-width="1.6"/>
+    <circle cx="868" cy="858" r="13" fill="#10B981"/>
+    <text x="868" y="863" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="13" font-weight="700" fill="#FFFFFF">4</text>
+    <text x="890" y="863" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="15" font-weight="700" fill="#312E81">drop the old key</text>
+    <text x="856" y="900" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">once nothing needs it</text>
+    <text x="856" y="922" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">remove it from the ring</text>
+  </g>
+
+  <!-- key ring -->
+  <rect x="300" y="990" width="500" height="140" rx="12" fill="#FFFFFF" stroke="#C7D2FE" stroke-width="1.4"/>
+  <circle cx="390" cy="1036" r="12" fill="none" stroke="#1E1B4B" stroke-width="4"/>
+
+  <g transform="rotate(-38 390 1048)">
+    <circle cx="390" cy="1048" r="7" fill="#94A3B8" stroke="#1E1B4B" stroke-width="2.2"/>
+    <rect x="386.5" y="1052" width="7" height="28" rx="3" fill="#94A3B8" stroke="#1E1B4B" stroke-width="2.2"/>
+    <rect x="393.5" y="1072" width="7" height="5.5" rx="2" fill="#94A3B8"/>
+    <rect x="393.5" y="1081" width="5" height="5.5" rx="2" fill="#94A3B8"/>
+  </g>
+  <g transform="rotate(38 390 1048)">
+    <circle cx="390" cy="1048" r="7" fill="#94A3B8" stroke="#1E1B4B" stroke-width="2.2"/>
+    <rect x="386.5" y="1052" width="7" height="28" rx="3" fill="#94A3B8" stroke="#1E1B4B" stroke-width="2.2"/>
+    <rect x="393.5" y="1072" width="7" height="5.5" rx="2" fill="#94A3B8"/>
+    <rect x="393.5" y="1081" width="5" height="5.5" rx="2" fill="#94A3B8"/>
+  </g>
+  <g>
+    <circle cx="390" cy="1048" r="7.5" fill="#FDE68A" stroke="#1E1B4B" stroke-width="2.2"/>
+    <rect x="386.5" y="1052" width="7" height="30" rx="3" fill="#FDE68A" stroke="#1E1B4B" stroke-width="2.2"/>
+    <rect x="393.5" y="1072" width="7" height="5.5" rx="2" fill="#F59E0B"/>
+    <rect x="393.5" y="1081" width="5" height="5.5" rx="2" fill="#F59E0B"/>
+  </g>
+
+  <text x="460" y="1044" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="14" font-weight="700" fill="#312E81">the three keys on Locky's ring</text>
+  <text x="460" y="1070" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#94A3B8">primary = gold · previous_keys = grey</text>
+  <text x="460" y="1095" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">rotation walks gold down to grey</text>
+
+  <!-- ================= footer ================= -->
+  <rect x="30" y="1160" width="1040" height="60" rx="12" fill="#312E81"/>
+  <text x="550" y="1196" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="14" font-weight="600" fill="#E0E7FF">while the old key is still on the ring, old ciphertext still opens</text>
+</svg>

@@ -1,0 +1,152 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1020 1330" role="img" aria-labelledby="t d" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif">
+  <title id="t">encryptable-rust 架构</title>
+  <desc id="d">分层架构图，自上而下：处理器 → 框架集成层 → 请求守卫 Guard → 两条加密路径（应用侧 AEAD 与 DB 侧确定性）→ 支撑模块 → 外部数据库。DB 侧经 SQL 片段让数据库自己解密。</desc>
+
+  <defs>
+    <marker id="ar" viewBox="0 0 10 10" refX="9.5" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0 0 L10 5 L0 10 z" fill="#5B21B6"/>
+    </marker>
+  </defs>
+
+  <rect x="0.5" y="0.5" width="1019" height="1329" rx="18" fill="#F8FAFF" stroke="#C7D2FE" stroke-width="1"/>
+
+  <text x="500" y="48" text-anchor="middle" font-size="21" font-weight="700" fill="#312E81">encryptable-rust 架构</text>
+  <text x="500" y="74" text-anchor="middle" font-size="13" fill="#64748B">分层架构 · layered architecture</text>
+
+  <!-- ============ 处理器 / Handlers ============ -->
+  <rect x="40" y="100" width="920" height="92" rx="14" fill="#FFFFFF" stroke="#C7D2FE" stroke-width="1.5"/>
+  <rect x="40" y="118" width="6" height="56" rx="3" fill="#5B21B6"/>
+  <text x="64" y="136" font-size="17" font-weight="700" fill="#312E81">处理器 Handlers</text>
+  <text x="936" y="136" text-anchor="end" font-size="12.5" fill="#64748B">用户代码 · user code</text>
+  <rect x="64" y="148" width="330" height="30" rx="8" fill="#DBE2FF" stroke="#C7D2FE"/>
+  <text x="80" y="168" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="13" fill="#1E1B4B">async fn h(guard: Guard)</text>
+
+  <line x1="500" y1="194" x2="500" y2="222" stroke="#5B21B6" stroke-width="2" marker-end="url(#ar)"/>
+
+  <!-- ============ 框架集成层 / Integrations ============ -->
+  <rect x="40" y="226" width="920" height="176" rx="14" fill="#FFFFFF" stroke="#C7D2FE" stroke-width="1.5"/>
+  <rect x="40" y="244" width="6" height="56" rx="3" fill="#5B21B6"/>
+  <text x="64" y="262" font-size="17" font-weight="700" fill="#312E81">框架集成层 Integrations</text>
+  <text x="936" y="262" text-anchor="end" font-size="12.5" fill="#64748B">8 个框架 · one trait</text>
+
+  <rect x="64" y="278" width="104" height="36" rx="10" fill="#FDE68A" stroke="#F59E0B" stroke-width="1.5"/>
+  <text x="116" y="301" text-anchor="middle" font-size="13" font-weight="600" fill="#78350F">axum</text>
+  <rect x="178" y="278" width="104" height="36" rx="10" fill="#FDE68A" stroke="#F59E0B" stroke-width="1.5"/>
+  <text x="230" y="301" text-anchor="middle" font-size="13" font-weight="600" fill="#78350F">bee-rust</text>
+  <rect x="292" y="278" width="104" height="36" rx="10" fill="#FDE68A" stroke="#F59E0B" stroke-width="1.5"/>
+  <text x="344" y="301" text-anchor="middle" font-size="13" font-weight="600" fill="#78350F">e-cat</text>
+  <path d="M64 326 v6 H396 v-6" fill="none" stroke="#F59E0B" stroke-width="2"/>
+  <text x="230" y="352" text-anchor="middle" font-size="12" fill="#B45309">同一适配层 · one adapter</text>
+
+  <rect x="436" y="278" width="92" height="36" rx="10" fill="#E8EDFF" stroke="#C7D2FE" stroke-width="1.5"/>
+  <text x="482" y="301" text-anchor="middle" font-size="13" fill="#1E1B4B">actix-web</text>
+  <rect x="538" y="278" width="92" height="36" rx="10" fill="#E8EDFF" stroke="#C7D2FE" stroke-width="1.5"/>
+  <text x="584" y="301" text-anchor="middle" font-size="13" fill="#1E1B4B">rocket</text>
+  <rect x="640" y="278" width="92" height="36" rx="10" fill="#E8EDFF" stroke="#C7D2FE" stroke-width="1.5"/>
+  <text x="686" y="301" text-anchor="middle" font-size="13" fill="#1E1B4B">poem</text>
+  <rect x="742" y="278" width="92" height="36" rx="10" fill="#E8EDFF" stroke="#C7D2FE" stroke-width="1.5"/>
+  <text x="788" y="301" text-anchor="middle" font-size="13" fill="#1E1B4B">salvo</text>
+  <rect x="844" y="278" width="92" height="36" rx="10" fill="#E8EDFF" stroke="#C7D2FE" stroke-width="1.5"/>
+  <text x="890" y="301" text-anchor="middle" font-size="13" fill="#1E1B4B">warp</text>
+
+  <text x="936" y="376" text-anchor="end" font-size="12" fill="#64748B">全部经 Guarded trait 取守卫 · all obtain the guard through the Guarded trait</text>
+
+  <line x1="500" y1="404" x2="500" y2="432" stroke="#5B21B6" stroke-width="2" marker-end="url(#ar)"/>
+
+  <!-- ============ 请求守卫 / Guard ============ -->
+  <rect x="40" y="436" width="920" height="130" rx="14" fill="#FFFFFF" stroke="#C7D2FE" stroke-width="1.5"/>
+  <rect x="40" y="454" width="6" height="56" rx="3" fill="#5B21B6"/>
+  <text x="64" y="472" font-size="17" font-weight="700" fill="#312E81">请求守卫 Guard</text>
+  <rect x="64" y="488" width="360" height="48" rx="10" fill="#DBE2FF" stroke="#312E81" stroke-width="1.5"/>
+  <text x="80" y="518" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="14" fill="#1E1B4B">Arc&lt;Guard&gt; · Clone + Send + Sync</text>
+  <text x="444" y="506" font-size="13" fill="#1E1B4B">构造时解析密钥环 · 每请求仅一次引用计数递增</text>
+  <text x="444" y="528" font-size="12" fill="#64748B">key ring resolved at construction · one refcount bump per request</text>
+
+  <line x1="500" y1="568" x2="500" y2="596" stroke="#5B21B6" stroke-width="2" marker-end="url(#ar)"/>
+
+  <!-- ============ 两条加密路径 / Two crypto paths ============ -->
+  <rect x="40" y="600" width="920" height="300" rx="14" fill="#FFFFFF" stroke="#C7D2FE" stroke-width="1.5"/>
+  <rect x="40" y="618" width="6" height="56" rx="3" fill="#5B21B6"/>
+  <text x="64" y="636" font-size="17" font-weight="700" fill="#312E81">两条加密路径 Two crypto paths</text>
+  <text x="936" y="636" text-anchor="end" font-size="12.5" fill="#FB7185">0x01 / 0x02 · never mixed</text>
+
+  <!-- 应用侧 -->
+  <rect x="64" y="652" width="412" height="186" rx="14" fill="#F8FAFF" stroke="#10B981" stroke-width="2"/>
+  <rect x="88" y="670" width="140" height="28" rx="14" fill="#D1FAE5" stroke="#10B981" stroke-width="1.5"/>
+  <text x="158" y="689" text-anchor="middle" font-size="12.5" font-weight="600" fill="#065F46">应用侧 · App side</text>
+  <text x="270" y="724" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="17" font-weight="700" fill="#1E1B4B">AeadEncrypter</text>
+  <text x="270" y="752" text-anchor="middle" font-size="13" fill="#334155">AES-256-GCM · 随机 nonce · 认证 tag</text>
+  <text x="270" y="774" text-anchor="middle" font-size="12" fill="#64748B">AES-256-GCM · random 96-bit nonce · tag = integrity</text>
+  <rect x="88" y="796" width="176" height="30" rx="8" fill="#FDE68A" stroke="#F59E0B" stroke-width="1.5"/>
+  <text x="176" y="816" text-anchor="middle" font-size="12" font-weight="600" fill="#78350F">格式字节 0x01</text>
+
+  <!-- DB 侧 -->
+  <rect x="524" y="652" width="412" height="186" rx="14" fill="#F8FAFF" stroke="#5B21B6" stroke-width="2"/>
+  <rect x="548" y="670" width="150" height="28" rx="14" fill="#EDE9FE" stroke="#5B21B6" stroke-width="1.5"/>
+  <text x="623" y="689" text-anchor="middle" font-size="12.5" font-weight="600" fill="#4C1D95">DB 侧 · DB side</text>
+  <text x="730" y="724" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="17" font-weight="700" fill="#1E1B4B">DbEncrypter</text>
+  <text x="730" y="752" text-anchor="middle" font-size="13" fill="#334155">AES-256-ECB · 确定性 · PKCS#7</text>
+  <text x="730" y="774" text-anchor="middle" font-size="12" fill="#64748B">AES-256-ECB · deterministic · same in → same out</text>
+  <rect x="548" y="796" width="176" height="30" rx="8" fill="#FDE68A" stroke="#F59E0B" stroke-width="1.5"/>
+  <text x="636" y="816" text-anchor="middle" font-size="12" font-weight="600" fill="#78350F">格式字节 0x02</text>
+
+  <!-- 隔离栏 -->
+  <line x1="500" y1="656" x2="500" y2="834" stroke="#FB7185" stroke-width="2" stroke-dasharray="7 6"/>
+  <g stroke="#FB7185" stroke-width="2.5" stroke-linecap="round">
+    <line x1="489" y1="684" x2="511" y2="684"/>
+    <line x1="489" y1="744" x2="511" y2="744"/>
+    <line x1="489" y1="804" x2="511" y2="804"/>
+  </g>
+  <rect x="330" y="846" width="340" height="46" rx="10" fill="#FFF1F2" stroke="#FB7185" stroke-width="1.5"/>
+  <text x="500" y="866" text-anchor="middle" font-size="12.5" font-weight="600" fill="#9F1239">格式字节隔离，不可混用</text>
+  <text x="500" y="884" text-anchor="middle" font-size="12" fill="#BE123C">0x01 ≠ 0x02 · mixing them is an error</text>
+
+  <line x1="500" y1="902" x2="500" y2="930" stroke="#5B21B6" stroke-width="2" marker-end="url(#ar)"/>
+
+  <!-- ============ 支撑模块 / Support ============ -->
+  <rect x="40" y="934" width="920" height="136" rx="14" fill="#FFFFFF" stroke="#C7D2FE" stroke-width="1.5"/>
+  <rect x="40" y="952" width="6" height="56" rx="3" fill="#5B21B6"/>
+  <text x="64" y="970" font-size="17" font-weight="700" fill="#312E81">支撑模块 Support</text>
+  <text x="936" y="970" text-anchor="end" font-size="12.5" fill="#64748B">crate 内部模块 · internal modules</text>
+
+  <rect x="64" y="988" width="110" height="62" rx="12" fill="#E8EDFF" stroke="#C7D2FE" stroke-width="1.5"/>
+  <text x="119" y="1014" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="14" font-weight="600" fill="#312E81">key</text>
+  <text x="119" y="1036" text-anchor="middle" font-size="12" fill="#5B21B6">Key · KeyRing</text>
+
+  <rect x="224" y="988" width="164" height="62" rx="12" fill="#E8EDFF" stroke="#C7D2FE" stroke-width="1.5"/>
+  <text x="306" y="1014" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="14" font-weight="600" fill="#312E81">serializer</text>
+  <text x="306" y="1036" text-anchor="middle" font-size="12" fill="#5B21B6">类型信封 type envelope</text>
+
+  <rect x="438" y="988" width="126" height="62" rx="12" fill="#E8EDFF" stroke="#C7D2FE" stroke-width="1.5"/>
+  <text x="501" y="1014" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="14" font-weight="600" fill="#312E81">cipher</text>
+  <text x="501" y="1036" text-anchor="middle" font-size="12" fill="#5B21B6">白名单 whitelist</text>
+
+  <rect x="614" y="988" width="180" height="62" rx="12" fill="#E8EDFF" stroke="#C7D2FE" stroke-width="1.5"/>
+  <text x="704" y="1014" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="14" font-weight="600" fill="#312E81">config</text>
+  <text x="704" y="1036" text-anchor="middle" font-size="12" fill="#5B21B6">ArrayConfig · EnvConfig</text>
+
+  <rect x="844" y="988" width="92" height="62" rx="12" fill="#E8EDFF" stroke="#C7D2FE" stroke-width="1.5"/>
+  <text x="890" y="1014" text-anchor="middle" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="14" font-weight="600" fill="#312E81">error</text>
+  <text x="890" y="1036" text-anchor="middle" font-size="12" fill="#5B21B6">Error enum</text>
+
+  <!-- SQL 片段：DbEncrypter → 数据库 -->
+  <path d="M936 700 H980 V1216 H940" fill="none" stroke="#5B21B6" stroke-width="2" marker-end="url(#ar)"/>
+  <text x="956" y="1092" text-anchor="end" font-size="13" font-weight="600" fill="#5B21B6">SQL 片段让数据库自己解密</text>
+  <text x="956" y="1110" text-anchor="end" font-size="12" fill="#64748B">SQL fragment lets the database decrypt it</text>
+
+  <line x1="500" y1="1072" x2="500" y2="1116" stroke="#5B21B6" stroke-width="2" marker-end="url(#ar)"/>
+
+  <!-- ============ 外部 / External ============ -->
+  <rect x="40" y="1120" width="920" height="164" rx="14" fill="#FFFFFF" stroke="#C7D2FE" stroke-width="1.5"/>
+  <rect x="40" y="1138" width="6" height="56" rx="3" fill="#5B21B6"/>
+  <text x="64" y="1156" font-size="17" font-weight="700" fill="#312E81">外部 External</text>
+  <text x="936" y="1156" text-anchor="end" font-size="12.5" fill="#64748B">数据库自己解密 · the database does the decryption</text>
+
+  <rect x="64" y="1172" width="428" height="88" rx="12" fill="#F8FAFF" stroke="#94A3B8" stroke-width="1.5"/>
+  <text x="88" y="1204" font-size="15" font-weight="700" fill="#312E81">MySQL</text>
+  <text x="88" y="1230" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12.5" fill="#1E1B4B">AES_DECRYPT(c, k) · FROM_BASE64(c)</text>
+
+  <rect x="508" y="1172" width="428" height="88" rx="12" fill="#F8FAFF" stroke="#94A3B8" stroke-width="1.5"/>
+  <text x="532" y="1204" font-size="15" font-weight="700" fill="#312E81">PostgreSQL</text>
+  <text x="532" y="1230" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12.5" fill="#1E1B4B">pgcrypto decrypt() · decode(..., 'base64')</text>
+</svg>

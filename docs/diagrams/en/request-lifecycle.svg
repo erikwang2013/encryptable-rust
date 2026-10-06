@@ -1,0 +1,149 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 1010" width="1100" height="1010" role="img" aria-labelledby="t d">
+  <title id="t">Request lifecycle — Encryptable</title>
+  <desc id="d">A left-to-right request flow: HTTP request → framework routing → guard extraction → handler, then a fork into the write path and the read path, both of which go through the database before the response. Two failure paths are drawn as dashed rose arrows: a guard that was never registered in state yields 500; a failing tag or a ring with no key that opens it leaves the response to the handler.</desc>
+
+  <rect x="4" y="4" width="1092" height="1002" rx="16" fill="#F8FAFF" stroke="#C7D2FE" stroke-width="1.5"/>
+
+  <text x="30" y="50" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="20" font-weight="700" fill="#312E81">Request lifecycle</text>
+  <text x="30" y="72" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12.5" fill="#5B21B6">from the incoming HTTP request to the response, plus the two failure paths</text>
+
+  <!-- ===== main path, first leg: request -> routing -> extraction -> handler ===== -->
+  <g>
+    <rect x="30" y="100" width="237" height="126" rx="12" fill="#FFFFFF" stroke="#1E1B4B" stroke-width="1.8"/>
+    <circle cx="58" cy="128" r="13" fill="#5B21B6"/>
+    <text x="58" y="133" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="13" font-weight="700" fill="#FFFFFF">1</text>
+    <text x="80" y="133" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="15" font-weight="700" fill="#312E81">HTTP request</text>
+    <text x="46" y="168" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">ciphertext or plaintext</text>
+  </g>
+
+  <path d="M267,163 H287" fill="none" stroke="#1E1B4B" stroke-width="1.6"/>
+  <path d="M296,163 l-9,-5 l0,10 z" fill="#1E1B4B"/>
+
+  <g>
+    <rect x="297" y="100" width="237" height="126" rx="12" fill="#FFFFFF" stroke="#1E1B4B" stroke-width="1.8"/>
+    <circle cx="325" cy="128" r="13" fill="#5B21B6"/>
+    <text x="325" y="133" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="13" font-weight="700" fill="#FFFFFF">2</text>
+    <text x="347" y="133" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="15" font-weight="700" fill="#312E81">Framework routing</text>
+    <text x="313" y="164" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">axum · actix-web · rocket</text>
+    <text x="313" y="182" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">poem · salvo · warp</text>
+    <text x="313" y="200" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">bee-rust · e-cat</text>
+  </g>
+
+  <path d="M534,163 H554" fill="none" stroke="#1E1B4B" stroke-width="1.6"/>
+  <path d="M563,163 l-9,-5 l0,10 z" fill="#1E1B4B"/>
+
+  <g>
+    <rect x="564" y="100" width="237" height="126" rx="12" fill="#FFFFFF" stroke="#1E1B4B" stroke-width="1.8"/>
+    <circle cx="592" cy="128" r="13" fill="#5B21B6"/>
+    <text x="592" y="133" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="13" font-weight="700" fill="#FFFFFF">3</text>
+    <text x="614" y="133" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="15" font-weight="700" fill="#312E81">Guard extraction</text>
+    <text x="580" y="164" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">adapter calls Guarded::guard()</text>
+    <text x="580" y="182" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">clones the Arc (refcount +1)</text>
+    <text x="580" y="200" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">no key material copied</text>
+  </g>
+
+  <path d="M801,163 H821" fill="none" stroke="#1E1B4B" stroke-width="1.6"/>
+  <path d="M830,163 l-9,-5 l0,10 z" fill="#1E1B4B"/>
+
+  <g>
+    <rect x="831" y="100" width="237" height="126" rx="12" fill="#FFFFFF" stroke="#1E1B4B" stroke-width="1.8"/>
+    <circle cx="859" cy="128" r="13" fill="#5B21B6"/>
+    <text x="859" y="133" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="13" font-weight="700" fill="#FFFFFF">4</text>
+    <text x="881" y="133" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="15" font-weight="700" fill="#312E81">Handler</text>
+    <text x="847" y="168" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">async fn h(guard: Guard)</text>
+  </g>
+
+  <!-- ===== fork: write / read ===== -->
+  <path d="M950,226 V282 H425 V307" fill="none" stroke="#1E1B4B" stroke-width="1.6"/>
+  <path d="M425,316 l-5,-9 l10,0 z" fill="#1E1B4B"/>
+  <path d="M825,282 V307" fill="none" stroke="#1E1B4B" stroke-width="1.6"/>
+  <path d="M825,316 l-5,-9 l10,0 z" fill="#1E1B4B"/>
+
+  <!-- write path -->
+  <g>
+    <rect x="250" y="316" width="350" height="170" rx="12" fill="#FFFFFF" stroke="#1E1B4B" stroke-width="1.8"/>
+    <circle cx="278" cy="344" r="13" fill="#5B21B6"/>
+    <text x="278" y="349" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="13" font-weight="700" fill="#FFFFFF">5</text>
+    <text x="300" y="349" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="14" font-weight="700" fill="#312E81">Write · guard.encrypt(value)</text>
+    <text x="266" y="382" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">plaintext → typed envelope tag(1B)‖payload</text>
+    <text x="266" y="404" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">random nonce(12) + AES-256-GCM</text>
+    <text x="266" y="426" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">→ base64(0x01‖nonce‖ciphertext‖tag)</text>
+    <text x="266" y="456" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="11.5" fill="#94A3B8">a fresh nonce on every write</text>
+  </g>
+
+  <!-- read path -->
+  <g>
+    <rect x="650" y="316" width="350" height="170" rx="12" fill="#FFFFFF" stroke="#1E1B4B" stroke-width="1.8"/>
+    <circle cx="678" cy="344" r="13" fill="#5B21B6"/>
+    <text x="678" y="349" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="13" font-weight="700" fill="#FFFFFF">5</text>
+    <text x="700" y="349" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="14" font-weight="700" fill="#312E81">Read · guard.decrypt_text(text)</text>
+    <text x="666" y="382" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">verify tag → walk the key ring</text>
+    <text x="666" y="404" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">→ restore the type (error on failure)</text>
+    <text x="666" y="456" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="11.5" fill="#94A3B8">never hands back the raw input</text>
+  </g>
+
+  <!-- ===== into the database -> response ===== -->
+  <path d="M425,486 V547" fill="none" stroke="#1E1B4B" stroke-width="1.6"/>
+  <path d="M425,556 l-5,-9 l10,0 z" fill="#1E1B4B"/>
+  <text x="437" y="524" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="11.5" fill="#5B21B6">store ciphertext</text>
+
+  <path d="M550,556 V521 H825 V495" fill="none" stroke="#1E1B4B" stroke-width="1.6"/>
+  <path d="M825,486 l-5,9 l10,0 z" fill="#1E1B4B"/>
+  <text x="600" y="513" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="11.5" fill="#5B21B6">fetch ciphertext</text>
+
+  <g>
+    <rect x="250" y="556" width="350" height="130" rx="12" fill="#DBE2FF" stroke="#1E1B4B" stroke-width="1.8"/>
+    <circle cx="278" cy="584" r="13" fill="#5B21B6"/>
+    <text x="278" y="589" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="13" font-weight="700" fill="#FFFFFF">6</text>
+    <text x="300" y="589" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="15" font-weight="700" fill="#312E81">Database</text>
+    <text x="266" y="622" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">the column holds ciphertext</text>
+    <text x="266" y="644" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">(base64 text, the type is hidden)</text>
+  </g>
+
+  <path d="M600,621 H641" fill="none" stroke="#1E1B4B" stroke-width="1.6"/>
+  <path d="M650,621 l-9,-5 l0,10 z" fill="#1E1B4B"/>
+
+  <g>
+    <rect x="650" y="556" width="350" height="130" rx="12" fill="#E8EDFF" stroke="#1E1B4B" stroke-width="1.8"/>
+    <circle cx="678" cy="584" r="13" fill="#5B21B6"/>
+    <text x="678" y="589" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="13" font-weight="700" fill="#FFFFFF">7</text>
+    <text x="700" y="589" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="15" font-weight="700" fill="#312E81">Response</text>
+    <text x="666" y="622" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">status and body are the handler's call</text>
+  </g>
+
+  <!-- ===== failure paths (dashed rose) ===== -->
+  <path d="M660,226 V250 H90 V727" fill="none" stroke="#FB7185" stroke-width="1.8" stroke-dasharray="7 5"/>
+  <path d="M90,736 l-5,-9 l10,0 z" fill="#FB7185"/>
+  <text x="375" y="243" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="11.5" fill="#BE123C">guard not in state → GuardNotConfigured → 500</text>
+
+  <path d="M1000,400 H1035 V727" fill="none" stroke="#FB7185" stroke-width="1.8" stroke-dasharray="7 5"/>
+  <path d="M1035,736 l-5,-9 l10,0 z" fill="#FB7185"/>
+  <text x="1022" y="512" text-anchor="end" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="11.5" fill="#BE123C">tag fails / no key opens it</text>
+
+  <g>
+    <rect x="30" y="736" width="510" height="150" rx="12" fill="#FFF1F2" stroke="#FB7185" stroke-width="1.6"/>
+    <path d="M52,758 L63,777 L41,777 Z" fill="#FB7185"/>
+    <rect x="50.5" y="763" width="3" height="8" rx="1.5" fill="#FFFFFF"/>
+    <rect x="50.5" y="773" width="3" height="3" rx="1.5" fill="#FFFFFF"/>
+    <text x="76" y="775" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="14" font-weight="700" fill="#BE123C">guard not registered in state</text>
+    <text x="48" y="805" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">→ GuardNotConfigured</text>
+    <text x="48" y="826" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">→ 500</text>
+    <text x="48" y="847" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">a wiring error — not something the caller did,</text>
+    <text x="48" y="866" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">the app forgot to put the guard into state.</text>
+  </g>
+
+  <g>
+    <rect x="570" y="736" width="500" height="150" rx="12" fill="#FFF1F2" stroke="#FB7185" stroke-width="1.6"/>
+    <path d="M592,758 L603,777 L581,777 Z" fill="#FB7185"/>
+    <rect x="590.5" y="763" width="3" height="8" rx="1.5" fill="#FFFFFF"/>
+    <rect x="590.5" y="773" width="3" height="3" rx="1.5" fill="#FFFFFF"/>
+    <text x="616" y="775" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="14" font-weight="700" fill="#BE123C">tag fails · no key on the ring opens it</text>
+    <text x="588" y="805" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">→ the handler decides: 200 / 4xx / 5xx</text>
+    <text x="588" y="826" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">the library does not decide the response for you.</text>
+    <text x="588" y="847" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#1E1B4B">strict mode errors; elsewhere it is the caller's call.</text>
+  </g>
+
+  <!-- ===== footer ===== -->
+  <rect x="30" y="916" width="1040" height="60" rx="12" fill="#312E81"/>
+  <text x="550" y="952" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="14" font-weight="600" fill="#E0E7FF">extraction never rejects; crypto failures are the caller's call</text>
+</svg>

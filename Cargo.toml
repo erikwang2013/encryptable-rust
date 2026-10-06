@@ -1,0 +1,108 @@
+# Copyright (c) 2026 erik <erik@erik.xyz> — https://erik.xyz
+
+[package]
+name = "encryptable-rust"
+version = "1.0.0"
+edition = "2024"
+rust-version = "1.88"
+description = "为敏感字段提供「可检索的匿名化 / 加密」能力：写入数据库前加密，读出时解密，并可生成与 MySQL / PostgreSQL 兼容的 SQL 片段"
+license = "MIT"
+repository = "https://github.com/erikwang2013/encryptable-rust"
+authors = ["erik <erik@erik.xyz>"]
+keywords = ["encryption", "aes-gcm", "database", "key-rotation", "pii"]
+categories = ["cryptography", "database"]
+readme = "README.md"
+
+# 随包只发「读代码 / 用库」要用的东西。`docs/pet.svg` 绝不能排 —— src/pet.rs 用
+# include_str! 内联它，排掉就编译不过（cargo package 会当场报错，不会静默漏发）。
+exclude = [
+    "CLAUDE.md",   # 仓库的 agent 配置，与使用者无关
+    "AGENTS.md",
+    "ruvector.db",
+    ".swarm",
+    ".claude-flow",
+]
+
+[lib]
+name = "encryptable"
+
+[[bin]]
+name = "encryptable"
+path = "src/bin/encryptable.rs"
+
+[dependencies]
+aes-gcm = { version = "0.10", features = ["zeroize"] }
+# 直接依赖 aes 有两个原因：一是启用其 zeroize feature，让 aes-gcm 内部使用的
+# aes 轮密钥同样清零；二是 DB 路径的 ECB 直接基于 Aes256/Aes128 手写 —— 见
+# docs 里「不引入 ecb crate」的说明（ecb 0.2 走 cipher 0.5，与 aes-gcm 0.10
+# 的 cipher 0.4 不兼容，引进来会拖入第二套 AES 栈）。
+aes = { version = "0.8", features = ["zeroize"] }
+zeroize = { version = "1", features = ["zeroize_derive"] }
+base64 = "0.22"
+
+serde = { version = "1", features = ["derive"], optional = true }
+serde_json = { version = "1", optional = true }
+
+# ── 框架集成（全部 opt-in）────────────────────────────────────────────────
+# 一律保留各框架的默认 feature：适配层要用的是它们的路由/提取器核心，
+# 而那几块常常挂在默认 feature 上。反正这些依赖只在用户主动开启对应 feature
+# 时才进图，且用户自己的框架依赖本来就会把默认 feature 拉进来（Cargo 取并集），
+# 在这里关掉除了让 `cargo check --features <那一个>` 编译不过之外没有收益。
+axum = { version = "0.8", optional = true }
+actix-web = { version = "4", optional = true }
+rocket = { version = "0.5", optional = true }
+poem = { version = "3", optional = true }
+salvo = { version = "1", optional = true }
+warp = { version = "0.4", optional = true }
+# bee-rust 的路由/上下文层
+bee_router = { version = "1", optional = true, default-features = false }
+# e-cat 的中间件层（其 feature 只有 cors / redis，默认不额外拉东西）
+ecat-middleware = { version = "4", optional = true, default-features = false }
+# e-cat 的 guard 要写成 tower Layer/Service，这两个 crate 提供那两个 trait
+tower = { version = "0.5", optional = true }
+http = { version = "1", optional = true }
+
+[features]
+default = []
+# 只为「把任意 Serialize 类型当 JSON 存进加密列」而开。核心的类型信封
+# （src/serializer.rs）不依赖 serde，也不该依赖 —— 一个类型字节比 JSON 更小更严，
+# 不需要它来兜底。
+serde = ["dep:serde", "dep:serde_json"]
+
+# ── 框架集成 ────────────────────────────────────────────────────────────────
+# 每个都是 opt-in：默认构建一个框架都不拉。它们做的事都一样 —— 把 Guard
+# （src/guard.rs，框架无关）按各自框架的惯例注入请求上下文，仅此而已。
+#
+# 注意 Cargo 的 feature 是**并集**：同一个二进制里同时开两个框架特性时，
+# 两个都会进依赖图。生产构建只开你真正在用的那个。
+axum = ["dep:axum"]
+actix-web = ["dep:actix-web"]
+rocket = ["dep:rocket"]
+poem = ["dep:poem"]
+salvo = ["dep:salvo"]
+warp = ["dep:warp"]
+# bee-rust 的路由层（bee_router）直接吃 axum handler，状态也走 axum 的 State，
+# 所以 axum 适配层在这里原样可用，顺带把它带上。
+# feature 名带连字符（`bee-rust`），但 Rust 的模块标识符不能含连字符，
+# 对应的模块是 `integrations::bee_rust` —— 两者指的是同一个东西。
+bee-rust = ["axum", "dep:bee_router"]
+# e-cat 同样是 axum + tower 的组合：HTTP 传输层是 axum，中间件是 tower Layer。
+# 它的 guard 形态是「往请求扩展里塞东西」，多需要 tower 与 http 两个 trait 来源。
+ecat = ["axum", "dep:ecat-middleware", "dep:tower", "dep:http"]
+
+[dev-dependencies]
+# 集成测试要拆载荷看字节，直接用主依赖的同一个 base64（同一个版本，不额外拉包）
+base64 = "0.22"
+
+# 只给框架适配层的测试用（各自 feature 打开时才编译那些测试）。这些是
+# dev-dependencies，不会进使用者的依赖图。
+tokio = { version = "1", features = ["macros", "rt"] }
+tower = { version = "0.5", features = ["util"] }
+# warp 的 `test` 模块（warp::test::request）挂在它的 `test` feature 后面，
+# 而 warp 的默认 feature 是空集。放在 dev-dependencies 里打开它，
+# 使用者的构建不会因此多拿任何东西。
+warp = { version = "0.4", features = ["test"] }
+
+[profile.release]
+lto = true
+codegen-units = 1
