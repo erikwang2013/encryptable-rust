@@ -2,7 +2,7 @@
 
 # encryptable-rust
 
-**🌐 Language:** **简体中文（本页）** · [English](./docs/i18n/en/README.md)
+<img src="./docs/pet.svg" alt="Locky · 小锁灵 —— 项目宠物" width="26"> **简体中文（本页）** · [English](./docs/i18n/en/README.md)
 
 为敏感字段提供「可检索的匿名化 / 加密」能力：写入数据库前加密，读出时解密，并可生成与 MySQL / PostgreSQL 兼容的 SQL 片段。Rust 移植自 PHP 包 [`erikwang2013/encryptable`](https://github.com/erikwang2013/encryptable)，用两条路径把「落库加密」与「按原值查询」这对通常不可兼得的需求分开处理 —— 应用侧 AES-256-GCM（随机 nonce、带认证，**默认选它**），DB 侧 AES-256-ECB（确定性，只给必须在 `WHERE` 里按原值比对的列）。
 
@@ -44,7 +44,30 @@ println!("{}", pet::ASCII);
 //       |________|
 ```
 
-`pet::NAME` / `pet::TAGLINE` / `pet::ASCII` / `pet::SVG` 四个常量对外公开，README、CLI banner、下游管理界面共用同一份。
+形象是 crate 的正式一部分，不是文档附件。四个常量与四个函数对外公开，README、CLI banner、下游管理界面共用同一份：
+
+| API | 返回 | 用途 |
+|-----|------|------|
+| `pet::NAME` / `pet::TAGLINE` | 名称与座右铭 | 界面文案 |
+| `pet::ASCII` / `pet::ascii()` | 等宽版形象 | 终端、日志、CLI banner |
+| `pet::SVG` / `pet::svg()` | 原始 SVG 标记 | README、管理后台 |
+| `pet::data_uri()` | `data:image/svg+xml;base64,…` | 直接塞进 HTML 的 `<img src>` |
+| `pet::SVG_LEN` | 字节数 | 需要预留缓冲区时 |
+
+`data_uri()` 是给下游用的：它和 `SVG` 是同一份 `include_str!` 的结果，所以调用方**不必依赖本库的文件布局**——形象一定在二进制里。挂一个图标端点：
+
+```rust
+use axum::response::Html;
+
+async fn pet_icon() -> Html<String> {
+    Html(format!(
+        r#"<img src="{}" alt="Locky" width="64">"#,
+        encryptable::pet::data_uri()
+    ))
+}
+```
+
+命令行里也有：`encryptable pet` 打印形象，`encryptable --version` 与 `--help` 都会带上它。
 
 `docs/pet.svg` **不能**进 Cargo 的 `exclude` —— `include_str!` 在编译期读它，排掉就当场编译失败（`cargo package` 会直接报错，不会静默漏发）。
 
@@ -60,7 +83,7 @@ encryptable-rust/
 │   ├── key.rs                 Key（零化 + 长度校验 + 遮蔽 Debug）与 KeyRing（主密钥 + 退役密钥）
 │   ├── serializer.rs          类型信封 Value：tag(1B) || 载荷
 │   ├── error.rs               Error 枚举（13 个变体）与 Result
-│   ├── pet.rs                 项目宠物形象（NAME / TAGLINE / ASCII / SVG）
+│   ├── pet.rs                 项目宠物形象（NAME · TAGLINE · ASCII · SVG + svg()/ascii()/data_uri()）
 │   ├── guard.rs               请求守卫 Guard：跨请求共享的加密句柄（Arc 共享，Send+Sync）
 │   ├── serde_support.rs       可选集成：encrypt_json / decrypt_json（--features serde）
 │   ├── config/                EncryptableConfig trait + DbDriver 方言
@@ -522,7 +545,7 @@ cargo clippy --all-targets -- -D warnings
 cargo fmt --all -- --check
 ```
 
-默认构建 **136 个测试通过**（另有 1 个默认 `#[ignore]`，它要连真实 MySQL），`--features serde` 是 **142 个**。每个框架 feature 各自再带一套适配层测试（3–7 个不等），只在开启该 feature 时编译：
+默认构建 **145 个测试通过**（另有 1 个默认 `#[ignore]`，它要连真实 MySQL），`--features serde` 是 **151 个**。每个框架 feature 各自再带一套适配层测试（3–7 个不等），只在开启该 feature 时编译：
 
 ```bash
 cargo test --features axum        # 每个框架一套

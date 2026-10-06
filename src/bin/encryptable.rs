@@ -36,7 +36,8 @@ DB 侧（AES-256-ECB，确定性，可被 SQL 解密）：
 选项：
   --driver mysql|pgsql      sql 命令的方言（默认取 ENCRYPTION_DB_DRIVER）
   --raw                     不解码输入，直接当成字面参数
-  --help                    显示本说明
+  --help, -h                显示本说明
+  --version, -V             显示版本与项目宠物
 
 环境变量：
   ENCRYPTION_KEY            主密钥（32 字节字面量、64 位 hex，或 base64: 前缀）
@@ -52,11 +53,32 @@ const EXIT_USAGE: u8 = 1;
 /// 配置或密码学错误。
 const EXIT_CRYPTO: u8 = 2;
 
+/// 打印用法，并带上项目宠物 —— 与 PHP 版安装时的提示一个用意。
+fn print_usage() {
+    println!("{}", encryptable::pet::ASCII);
+    println!();
+    print!("{USAGE}");
+}
+
+/// 版本信息。`名称 版本`（git 惯例的一行式），随后附上宠物。
+fn print_version() {
+    println!("encryptable {}", env!("CARGO_PKG_VERSION"));
+    println!();
+    println!("{}", encryptable::pet::ASCII);
+    println!();
+    println!("{}", encryptable::pet::TAGLINE);
+}
+
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
 
+    if args.iter().any(|a| a == "--version" || a == "-V") {
+        print_version();
+        return ExitCode::SUCCESS;
+    }
+
     if args.is_empty() || args.iter().any(|a| a == "--help" || a == "-h") {
-        print!("{USAGE}");
+        print_usage();
         return if args.is_empty() {
             ExitCode::from(EXIT_USAGE)
         } else {

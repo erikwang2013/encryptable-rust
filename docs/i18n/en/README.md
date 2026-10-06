@@ -2,7 +2,7 @@
 
 # encryptable-rust
 
-**🌐 Language:** [简体中文](../../../README.md) · **English (this page)**
+<img src="../../pet.svg" alt="Locky · 小锁灵 — the project pet" width="26"> [简体中文](../../../README.md) · **English (this page)**
 
 Query-friendly anonymization / encryption for sensitive columns: encrypt before persisting, decrypt on read, and emit MySQL / PostgreSQL-compatible SQL fragments for comparing against encrypted columns. A Rust port of the PHP package [`erikwang2013/encryptable`](https://github.com/erikwang2013/encryptable), it uses two paths to split apart the pair of requirements that usually cannot both be met — "encrypt at rest" and "query by original value": the application side AES-256-GCM (random nonce, authenticated, **the default choice**), the DB side AES-256-ECB (deterministic, reserved for columns that must be matched by original value inside a `WHERE`).
 
@@ -44,7 +44,30 @@ println!("{}", pet::ASCII);
 //       |________|
 ```
 
-The four constants `pet::NAME` / `pet::TAGLINE` / `pet::ASCII` / `pet::SVG` are public, shared by the README, the CLI banner and any downstream admin UI.
+The artwork is a first-class part of the crate, not a documentation attachment. Four constants and four functions are public, shared by the README, the CLI banner and any downstream admin UI:
+
+| API | Returns | For |
+|-----|---------|-----|
+| `pet::NAME` / `pet::TAGLINE` | name and motto | UI copy |
+| `pet::ASCII` / `pet::ascii()` | monospace rendition | terminals, logs, CLI banner |
+| `pet::SVG` / `pet::svg()` | raw SVG markup | README, admin back office |
+| `pet::data_uri()` | `data:image/svg+xml;base64,…` | drop straight into an HTML `<img src>` |
+| `pet::SVG_LEN` | byte length | when you need to size a buffer |
+
+`data_uri()` is the one meant for downstream use: it is the same `include_str!` result as `SVG`, so callers **do not have to depend on this library's file layout** — the artwork is guaranteed to be in the binary. Serving an icon endpoint:
+
+```rust
+use axum::response::Html;
+
+async fn pet_icon() -> Html<String> {
+    Html(format!(
+        r#"<img src="{}" alt="Locky" width="64">"#,
+        encryptable::pet::data_uri()
+    ))
+}
+```
+
+It is on the command line too: `encryptable pet` prints the artwork, and both `encryptable --version` and `--help` carry it.
 
 `docs/pet.svg` **must not** go into Cargo's `exclude` — `include_str!` reads it at compile time, and excluding it fails the build on the spot (`cargo package` errors out outright rather than silently shipping without it).
 
@@ -60,7 +83,7 @@ encryptable-rust/
 │   ├── key.rs                 Key (zeroize + length check + redacted Debug) and KeyRing (primary + retired keys)
 │   ├── serializer.rs          type envelope Value: tag(1B) || payload
 │   ├── error.rs               the Error enum (13 variants) and Result
-│   ├── pet.rs                 project pet artwork (NAME / TAGLINE / ASCII / SVG)
+│   ├── pet.rs                 project pet artwork (NAME · TAGLINE · ASCII · SVG + svg()/ascii()/data_uri())
 │   ├── guard.rs               request guard Guard: the encryption handle shared across requests (Arc-shared, Send+Sync)
 │   ├── serde_support.rs       optional integration: encrypt_json / decrypt_json (--features serde)
 │   ├── config/                EncryptableConfig trait + DbDriver dialects
@@ -522,7 +545,7 @@ cargo clippy --all-targets -- -D warnings
 cargo fmt --all -- --check
 ```
 
-The default build has **136 tests passing** (plus 1 that is `#[ignore]`d by default and needs a real MySQL), and `--features serde` gives **142**. Each framework feature brings its own set of adapter tests (3–7 of them), compiled only when that feature is on:
+The default build has **145 tests passing** (plus 1 that is `#[ignore]`d by default and needs a real MySQL), and `--features serde` gives **151**. Each framework feature brings its own set of adapter tests (3–7 of them), compiled only when that feature is on:
 
 ```bash
 cargo test --features axum        # one set per framework
@@ -574,17 +597,17 @@ If this project helps you, a donation is welcome (entirely voluntary).
 
 ### Global transfer (international wire)
 
-【Recipient details】
+**Recipient details**
 - Recipient name: WANG KEXUN
 - Recipient account number: 881015918251
 
-【Receiving bank】
+**Receiving bank**
 - ZA Bank SWIFT Code: AABLHKHHXXX
 - Bank name: ZA Bank Limited
 - Bank code: 387
 - Bank address: Core F, Cyberport 3, 100 Cyberport Road, Hong Kong
 
-【Cross-border correspondent bank (if required)】
+**Cross-border correspondent bank (if required)**
 
 Please note that this is cross-border correspondent (intermediary) bank information, not the receiving bank's. Ask your sending bank whether correspondent bank information needs to be supplied.
 

@@ -5,6 +5,31 @@
 本文件记录本 crate 的显著变更，格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.1.0] - 2026-10-07
+
+把项目宠物从「文档里的图」变成 crate 的正式一部分，并修掉英文文档里的几处不自然。
+
+### 新增
+
+- `pet::svg()` —— 原始 SVG 标记（对应常量 `pet::SVG`）。
+- `pet::ascii()` —— 终端等宽版（对应常量 `pet::ASCII`）。
+- `pet::data_uri()` —— `data:image/svg+xml;base64,…`，可直接塞进 HTML 的 `<img src>`。
+  下游因此不必依赖本库的文件布局：形象经 `include_str!` 打进二进制，与 `SVG` 是同一份。
+- `pet::SVG_LEN` —— 形象的字节数。
+- CLI 新增 `--version` / `-V`：输出 `encryptable <版本>`，附宠物与座右铭。
+- CLI 的 `--help` 与无参数调用现在都会先打印宠物。
+
+### 变更
+
+- 两份 README 语言切换行里的 🌐 换成项目宠物图标。
+- 英文 README 里 3 处包裹英文标签的全角括号 `【】` 改为加粗。
+- crate 文档补上宠物 API 的可运行示例。
+
+### 说明
+
+本版**无破坏性变更**，也没有改密码学行为 —— 1.0.0 产生的密文与 1.1.0 完全互通。
+按语义化版本，新增公开 API 属次要版本，故为 1.1.0 而非 1.0.1。
+
 ## [1.0.0] - 2026-10-07
 
 首个正式版本。Rust 移植自 PHP 包 [`erikwang2013/encryptable`](https://github.com/erikwang2013/encryptable)。
@@ -68,4 +93,5 @@
 
 运行时只有 4 个：`aes-gcm` · `aes` · `zeroize` · `base64`。
 
+[1.1.0]: https://github.com/erikwang2013/encryptable-rust/releases/tag/v1.1.0
 [1.0.0]: https://github.com/erikwang2013/encryptable-rust/releases/tag/v1.0.0

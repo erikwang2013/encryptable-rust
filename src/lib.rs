@@ -62,7 +62,19 @@
 //! # 项目宠物：Locky · 小锁灵
 //!
 //! 钥匙环上那把琥珀色的是当前主密钥，两把灰色的是 [`previous_keys`] ——
-//! 还在环上、还能解旧密文，直到你退役它们。见 [`pet`]。
+//! 还在环上、还能解旧密文，直到你退役它们。
+//!
+//! 形象是 crate 的一部分，不是文档附件 —— SVG 经 `include_str!` 打进二进制，
+//! 所以下游不必依赖本库的文件布局：
+//!
+//! ```
+//! use encryptable::pet;
+//!
+//! assert_eq!(pet::NAME, "Locky · 小锁灵");
+//! assert!(pet::svg().starts_with("<svg"));        // 原始 SVG 标记
+//! assert!(pet::ascii().contains("Locky"));        // 终端用的等宽版
+//! assert!(pet::data_uri().starts_with("data:image/svg+xml;base64,")); // 塞进 <img src>
+//! ```
 //!
 //! [`previous_keys`]: EncryptableConfig::previous_keys
 
