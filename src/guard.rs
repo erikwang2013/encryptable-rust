@@ -45,6 +45,11 @@ impl Guard {
     /// 只带应用侧加密器 —— 最常见的情形。
     ///
     /// 构造时即完成校验（密钥长度、密码是否可用），配置错了就在启动时炸。
+    ///
+    /// # Errors
+    ///
+    /// 与 [`AeadEncrypter::new`] 相同：`MissingKey` / `MissingCipher` /
+    /// `UnsupportedCipher` / `CipherNotUsable` / `InvalidKeyBase64` / `KeyLength`。
     pub fn new<C: EncryptableConfig + 'static>(config: &C) -> Result<Self> {
         Ok(Self {
             aead: Arc::new(AeadEncrypter::new(config)?),
@@ -61,6 +66,12 @@ impl Guard {
     }
 
     /// 从环境变量构造（`ENCRYPTION_*`）。
+    ///
+    /// # Errors
+    ///
+    /// 与 [`Guard::new`] 相同。注意读的是**进程环境**；测试里请改用
+    /// [`Guard::new`] 配 [`EnvConfig::from_env_with`](crate::config::EnvConfig::from_env_with)，
+    /// 免得与并行跑的其他测试争抢进程环境。
     pub fn from_env() -> Result<Self> {
         Self::new(&EnvConfig::from_env())
     }
@@ -71,6 +82,14 @@ impl Guard {
     /// 密钥可以复用同一把（`aes-256-*` 的长度都是 32 字节），但密码必须显式写
     /// 成 `aes-256-ecb` 或 `aes-128-ecb` —— 这里不做隐式替换，免得「为什么它
     /// 用的是另一个密码」变成一个只有读源码才知道的事。
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::CipherNotUsable`](crate::Error::CipherNotUsable) —— 传进来的配置用的是非确定性密码。
+    ///   这是最常见的调用错误：把主配置（`aes-256-gcm`）直接传进来
+    /// - 其余与 [`DbEncrypter::new`](crate::encrypter::DbEncrypter::new) 相同
+    ///
+    /// 失败时 `self` 被消耗掉 —— 调用方要么重试要么放弃，不该继续用半个守卫。
     pub fn with_db<C: EncryptableConfig + 'static>(mut self, config: &C) -> Result<Self> {
         self.db = Some(Arc::new(DbEncrypter::new(config)?));
         Ok(self)
@@ -98,16 +117,29 @@ impl Guard {
     }
 
     /// 加密一个值（转发到应用侧）。
+    ///
+    /// # Errors
+    ///
+    /// 见 [`AeadEncrypter::encrypt`](crate::encrypter::AeadEncrypter::encrypt)。
     pub fn encrypt(&self, value: impl Into<Value>) -> Result<String> {
         self.aead.encrypt(value)
     }
 
     /// 解密（转发到应用侧）。
+    ///
+    /// # Errors
+    ///
+    /// 见 [`AeadEncrypter::decrypt`](crate::encrypter::AeadEncrypter::decrypt) ——
+    /// 载荷非法、走错加密器、密钥环全落空、类型信封读不出，都会返回错误。
     pub fn decrypt(&self, payload: &str) -> Result<Value> {
         self.aead.decrypt(payload)
     }
 
     /// 解密并断言是字符串。
+    ///
+    /// # Errors
+    ///
+    /// 见 [`AeadEncrypter::decrypt_text`](crate::encrypter::AeadEncrypter::decrypt_text)。
     pub fn decrypt_text(&self, payload: &str) -> Result<String> {
         self.aead.decrypt_text(payload)
     }
@@ -124,6 +156,11 @@ impl Guard {
     }
 
     /// 用当前主密钥重新加密（轮换用）。
+    ///
+    /// # Errors
+    ///
+    /// 见 [`AeadEncrypter::rotate_to_current_key`](crate::encrypter::AeadEncrypter::rotate_to_current_key)。
+    /// 输入不是密文时原样返回，不报错。
     pub fn rotate_to_current_key(&self, payload: &str) -> Result<String> {
         self.aead.rotate_to_current_key(payload)
     }

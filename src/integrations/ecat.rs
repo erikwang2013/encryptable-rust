@@ -14,7 +14,10 @@
 //! use tower::ServiceBuilder;
 //!
 //! # fn main() {
-//! let guard = /* … */;
+//! let guard = encryptable::Guard::new(
+//!     &encryptable::ArrayConfig::new("0123456789abcdef0123456789abcdef"),
+//! )
+//! .unwrap();
 //! let middleware = ServiceBuilder::new().layer(GuardLayer::new(guard));
 //! # let _ = middleware;
 //! # }

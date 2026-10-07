@@ -14,7 +14,10 @@
 //! }
 //!
 //! # fn main() {
-//! let guard = /* … */;
+//! let guard = encryptable::Guard::new(
+//!     &encryptable::ArrayConfig::new("0123456789abcdef0123456789abcdef"),
+//! )
+//! .unwrap();
 //! let app = move || {
 //!     App::new()
 //!         .app_data(web::Data::new(guard.clone()))

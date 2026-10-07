@@ -6,7 +6,8 @@
 //!
 //! ```no_run
 //! # mod demo {
-//! use poem::{Route, get, handler};
+//! // `.data()` 来自 `EndpointExt`，不 import 它调不出这个方法
+//! use poem::{EndpointExt as _, Route, get, handler};
 //! use encryptable::guard::Guard;
 //!
 //! #[handler]
@@ -15,7 +16,10 @@
 //! }
 //!
 //! # fn main() {
-//! let guard = /* … */;
+//! let guard = encryptable::Guard::new(
+//!     &encryptable::ArrayConfig::new("0123456789abcdef0123456789abcdef"),
+//! )
+//! .unwrap();
 //! let app = Route::new().at("/", get(store_phone)).data(guard);
 //! # let _ = app;
 //! # }

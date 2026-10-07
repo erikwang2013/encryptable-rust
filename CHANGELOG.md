@@ -5,6 +5,61 @@
 本文件记录本 crate 的显著变更，格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.2.1] - 2026-10-07
+
+一次审计后的内部优化。**没有 API 变化，没有密码学行为变化** —— 1.2.0 产生的
+密文与 1.2.1 完全互通，升级不需要重新加密任何数据。
+
+### 性能
+
+- **解密不再重建 AES 密钥调度。** 原本密钥环循环里对每一把钥匙调一次
+  `Aes256Gcm::new_from_slice`，包括本来就已建好的主密钥 —— 单密钥部署下等于
+  每请求白算一遍密钥调度，外加两次 `Box` 分配。现在整环的 cipher 在**构造时**
+  一次建好，解密只剩 AEAD 解封本身。
+- **`encrypt()` 先做廉价的形状判定再决定要不要认证。** 原本对每个字符串都直接
+  试一次完整 AEAD 解封；明文通常根本不是合法 base64，到形状判定就被挡掉。
+  两阶段保留了原有的正确性：形状像密文的**明文**（base64 解出来首字节恰好是
+  `0x01`）仍会被正确地加密，不会被误判成密文存进去。
+- **DB 侧解密少两次堆分配。** 原本 `decoded[1..].to_vec()` 再
+  `plain.to_vec()`；现在就地跳过版本字节、就地截掉 PKCS#7 补位，
+  `String::from_utf8` 直接接管同一个缓冲。
+
+### 依赖
+
+- **去掉两个声明了却一行都没引用的可选依赖：`bee_router` 与 `ecat-middleware`。**
+  两个适配层实际只用 axum（e-cat 另需 tower / http 两个 trait 来源）。
+  实测依赖树：`bee-rust` feature **171 → 90 个 crate**，`ecat` **118 → 90 个**。
+- 去掉 `zeroize` 的 `zeroize_derive` feature —— 本 crate 没有一处
+  `derive(Zeroize)`，用到的只有 `Zeroizing` 包装类型。
+
+### 修复
+
+- **六个框架集成模块的文档示例根本编译不过**，一直没被发现。`actix` / `rocket` /
+  `poem` / `warp` / `ecat` / `salvo` 的模块级示例里写的是
+  `let guard = /* … */;` —— `/* … */` 是块注释，那行实际是 `let guard = ;`，
+  语法错误。这些示例都挂在 feature 后面，而此前的 feature 验证跑的是
+  `cargo test --features X --lib`，**`--lib` 不跑文档测试**，于是六处一起漏了过去。
+  现在示例改为真正构造一个守卫，顺带把 `poem`（少 `use EndpointExt`）与
+  `salvo`（示例引用了非默认 feature 才有的 `affix_state`）两处一并修正。
+  新增的 CI 跑的是不带 `--lib` 的 `cargo test --features X`，这类问题以后会在
+  推送时就被挡住。
+
+### 文档
+
+- 补齐 **23 处**`# Errors` 文档段落（clippy `missing_errors_doc` 从 23 条降到 0）。
+  逐个写明会返回哪些 `Error` 变体、什么条件下返回 —— 对 docs.rs 上的读者来说
+  这是最先要看的一段。
+- `KeyRing::is_empty()` 补上准确文档：它**恒为 `false`**（环按构造至少含主密钥），
+  并点明「守卫配没配密钥」该看 `len() == 1` 而不是它。
+- `DbEncrypter::decrypt` 的文档里写明：**密钥错时 ECB 不保证报错** ——
+  没有认证就没有可靠的判据，这是 ECB 的固有性质，不是实现缺陷。
+
+### 新增
+
+- **CI**（`.github/workflows/ci.yml`）：fmt · clippy（`-D warnings`）· 默认与 serde 测试 ·
+  **MSRV 1.88 实机验证**（`Cargo.toml` 声明的版本得真的能编）· 每个 feature 一个
+  矩阵 job · `cargo publish --dry-run` 打包验证。此前推送没有任何自动检查。
+
 ## [1.2.0] - 2026-10-07
 
 宠物再往前一步：从「库里有这个 API」变成「框架里挂上就有」，并把四张图里的抽象图形换成真实形象。
@@ -122,6 +177,7 @@
 
 运行时只有 4 个：`aes-gcm` · `aes` · `zeroize` · `base64`。
 
+[1.2.1]: https://github.com/erikwang2013/encryptable-rust/releases/tag/v1.2.1
 [1.2.0]: https://github.com/erikwang2013/encryptable-rust/releases/tag/v1.2.0
 [1.1.0]: https://github.com/erikwang2013/encryptable-rust/releases/tag/v1.1.0
 [1.0.0]: https://github.com/erikwang2013/encryptable-rust/releases/tag/v1.0.0

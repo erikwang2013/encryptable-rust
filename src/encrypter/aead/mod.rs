@@ -42,10 +42,17 @@ const MIN_LEN: usize = 1 + NONCE_LEN + TAG_LEN;
 /// 应用侧加密器。
 ///
 /// 配置在构造时就被解析成一串密钥，之后不再读环境、不再解析字符串。
+///
+/// 密钥环上**每一把钥匙各自的 cipher 也在构造时一次建好**：AES 的密钥调度是
+/// 每次解密都要付的固定开销，放在解密循环里重建等于每请求重算一遍。
 #[derive(Clone)]
 pub struct AeadEncrypter {
-    cipher: GcmCipher,
+    /// 与 `ring` 索引对齐：`ciphers[i]` 是 `ring` 第 i 把钥匙的 cipher。
+    /// `ciphers[0]` 即主密钥的 cipher，加密只用它。
+    ciphers: Vec<GcmCipher>,
     ring: KeyRing,
+    /// 密码名，构造时定下来（原本靠 match `cipher` 字段推，现在直接存）。
+    name: &'static str,
 }
 
 /// 底层 GCM 实例。
@@ -58,6 +65,22 @@ enum GcmCipher {
 }
 
 impl GcmCipher {
+    /// 按密码与密钥字节建一个 GCM 实例。
+    ///
+    /// 密钥长度此前已由 [`Key::parse`](crate::key::Key::parse) 校验过，这里的
+    /// `new_from_slice` 正常不会失败；真失败了也是配置错，照实报出去。
+    fn new(cipher: Cipher, key: &[u8]) -> Result<Self> {
+        Ok(match cipher {
+            Cipher::Aes256Gcm => Self::Aes256(Box::new(
+                Aes256Gcm::new_from_slice(key).map_err(|e| Error::Encrypt(e.to_string()))?,
+            )),
+            Cipher::Aes128Gcm => Self::Aes128(Box::new(
+                Aes128Gcm::new_from_slice(key).map_err(|e| Error::Encrypt(e.to_string()))?,
+            )),
+            other => return Err(Error::UnsupportedCipher(other.to_string())),
+        })
+    }
+
     fn seal(&self, nonce: &[u8], plaintext: &[u8]) -> Result<Vec<u8>> {
         let aad = [VERSION];
         let payload = Payload {
@@ -94,6 +117,14 @@ impl AeadEncrypter {
     ///
     /// 校验放在构造而不是首次使用：配错了就该在启动时炸，而不是在某个深夜的
     /// 请求路径上才失败。
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::MissingKey`] —— 配置里没有密钥
+    /// - [`Error::MissingCipher`] / [`Error::UnsupportedCipher`] —— 密码为空或不在白名单内
+    /// - [`Error::CipherNotUsable`] —— 配了非 AEAD 密码（本路径只收 GCM）
+    /// - [`Error::InvalidKeyBase64`] —— `base64:` 前缀后面的内容解不开
+    /// - [`Error::KeyLength`] —— 密钥字节数与密码要求不符（主密钥与退役密钥一并校验）
     pub fn new<C: EncryptableConfig + 'static>(config: &C) -> Result<Self> {
         let cipher = Cipher::from_str_checked(config.cipher())?;
 
@@ -119,30 +150,35 @@ impl AeadEncrypter {
             .collect::<Result<Vec<_>>>()?;
 
         let ring = KeyRing::new(primary, previous);
-        let gcm = match cipher {
-            Cipher::Aes256Gcm => GcmCipher::Aes256(Box::new(
-                Aes256Gcm::new_from_slice(ring.primary().as_bytes())
-                    .map_err(|e| Error::Encrypt(e.to_string()))?,
-            )),
-            Cipher::Aes128Gcm => GcmCipher::Aes128(Box::new(
-                Aes128Gcm::new_from_slice(ring.primary().as_bytes())
-                    .map_err(|e| Error::Encrypt(e.to_string()))?,
-            )),
-            // is_aead() 已经挡过，这里不可达
-            other => {
-                return Err(Error::UnsupportedCipher(other.to_string()));
-            }
-        };
 
-        Ok(Self { cipher: gcm, ring })
+        // 环上**每一把**钥匙各建一个 cipher，而不是只建主密钥那个。
+        //
+        // 原本只在构造时建主密钥的，解密时再按需重建 —— 那么每次解密都要为
+        // 环上每一把钥匙重做一次 AES 密钥调度（外加一次 Box 分配），单密钥部署
+        // 下等于每请求白算一遍。密钥调度是固定开销，一次性付掉即可。
+        let mut ciphers = Vec::with_capacity(ring.len());
+        for key in ring.iter() {
+            ciphers.push(GcmCipher::new(cipher, key.as_bytes())?);
+        }
+
+        Ok(Self {
+            ciphers,
+            ring,
+            name: cipher.as_str(),
+        })
     }
 
     /// 使用的密码名。
     pub fn cipher_name(&self) -> &'static str {
-        match self.cipher {
-            GcmCipher::Aes256(_) => Cipher::Aes256Gcm.as_str(),
-            GcmCipher::Aes128(_) => Cipher::Aes128Gcm.as_str(),
-        }
+        self.name
+    }
+
+    /// 主密钥的 cipher。加密只用它。
+    ///
+    /// 不变量：`KeyRing::new` 保证环上至少有一把钥匙，而 `ciphers` 与环等长，
+    /// 所以下标 0 必然存在。
+    fn primary_cipher(&self) -> &GcmCipher {
+        &self.ciphers[0]
     }
 
     /// 环上钥匙数量（含主密钥）。
@@ -155,10 +191,23 @@ impl AeadEncrypter {
     /// 已经是本格式的密文则**原样返回**，不会二次加密。判定方式是试着解开它 ——
     /// 光看形状会把「base64 解出来首字节恰好是 0x01 的明文」误判成密文然后存进去，
     /// 那正是 PHP 版踩过的坑。
+    ///
+    /// # Errors
+    ///
+    /// 只在底层 AEAD 加密失败时返回 [`Error::Encrypt`]（明文超长等）。输入是
+    /// 别的格式的密文**不会**报错 —— 那会被当作普通明文照常加密。
     pub fn encrypt(&self, value: impl Into<Value>) -> Result<String> {
         let value = value.into();
 
+        // 两阶段判定，两边的好处都要：
+        //
+        // ① `is_encrypted` 是廉价的形状判定（一次 base64 解码尝试）。明文通常
+        //    根本不是合法 base64，到这就被挡掉，不会白白做一次 GCM 解封。
+        // ② 形状通过之后才真的去认证一次。**不能只做形状判定** —— 一段 base64
+        //    解出来首字节恰好是 0x01 的明文会被误判成密文然后直接存库，从此
+        //    解不开。那正是 PHP 版踩过的坑，第二阶段专治这个假阳性。
         if let Value::String(ref s) = value
+            && self.is_encrypted(s)
             && self.decrypt(s).is_ok()
         {
             return Ok(s.clone());
@@ -171,11 +220,16 @@ impl AeadEncrypter {
     ///
     /// 只在明确知道输入是明文时用。重复加密同一段明文是完全合法的 ——
     /// nonce 随机会让两次结果不同。
+    ///
+    /// # Errors
+    ///
+    /// 底层 AEAD 加密失败时返回 [`Error::Encrypt`]（明文超长等）。不会因为输入
+    /// 看起来像密文而失败。
     pub fn seal(&self, value: impl Into<Value>) -> Result<String> {
         let plaintext = value.into().encode();
 
         let nonce = Aes256Gcm::generate_nonce(&mut OsRng);
-        let ciphertext = self.cipher.seal(&nonce, &plaintext)?;
+        let ciphertext = self.primary_cipher().seal(&nonce, &plaintext)?;
 
         let mut payload = Vec::with_capacity(MIN_LEN + ciphertext.len());
         payload.push(VERSION);
@@ -191,6 +245,13 @@ impl AeadEncrypter {
     /// 那种回退是明文被悄悄写进数据库的主要途径：加密列里躺着的明文看起来
     /// 和密文一模一样，直到某天有人审计。确实需要的话用
     /// [`decrypt_or_original`](Self::decrypt_or_original)，让这个决定显式出现在调用点。
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::Base64`] —— 载荷不是合法 base64
+    /// - [`Error::WrongFormat`] —— 载荷是 **DB 侧**密文（格式字节 `0x02`），走错了加密器
+    /// - [`Error::Decrypt`] —— 版本字节陌生、长度不足，或密钥环上没有一把钥匙能解开
+    /// - [`Error::Unserialize`] —— 解出来了，但类型信封读不出（类型字节陌生、载荷长度不符）
     pub fn decrypt(&self, payload: &str) -> Result<Value> {
         let decoded = base64::engine::general_purpose::STANDARD
             .decode(payload)
@@ -224,19 +285,12 @@ impl AeadEncrypter {
         let nonce = &decoded[1..1 + NONCE_LEN];
         let ciphertext = &decoded[1 + NONCE_LEN..];
 
-        // 逐把钥匙试。这里刻意不区分「哪把钥匙解开的」——调用方不需要知道，
-        // 而把「是第几把」泄出去等于泄了轮换进度。
+        // 逐把钥匙试。cipher 在构造时就按环建好了，这里只剩一次 AEAD 解封。
+        // 刻意不区分「是哪一把解开的」——调用方不需要知道，而把「第几把」
+        // 泄出去等于泄了轮换进度。
         let mut opened = None;
-        for key in self.ring.iter() {
-            let gcm = match self.cipher {
-                GcmCipher::Aes256(_) => Aes256Gcm::new_from_slice(key.as_bytes())
-                    .ok()
-                    .map(|c| GcmCipher::Aes256(Box::new(c))),
-                GcmCipher::Aes128(_) => Aes128Gcm::new_from_slice(key.as_bytes())
-                    .ok()
-                    .map(|c| GcmCipher::Aes128(Box::new(c))),
-            };
-            if let Some(plain) = gcm.and_then(|g| g.open(nonce, ciphertext)) {
+        for cipher in &self.ciphers {
+            if let Some(plain) = cipher.open(nonce, ciphertext) {
                 opened = Some(plain);
                 break;
             }
@@ -249,6 +303,11 @@ impl AeadEncrypter {
     }
 
     /// 解密并断言结果是字符串。
+    ///
+    /// # Errors
+    ///
+    /// 与 [`decrypt`](Self::decrypt) 相同，另加：解开但值不是字符串时返回
+    /// [`Error::Decrypt`]（报文里写明实际类型）。
     pub fn decrypt_text(&self, payload: &str) -> Result<String> {
         match self.decrypt(payload)? {
             Value::String(s) => Ok(s),
@@ -288,6 +347,13 @@ impl AeadEncrypter {
     ///
     /// 轮换的第三步：新数据已经用新主密钥写入，这个方法把存量数据一把一把搬过去。
     /// 输入本来就是明文时原样返回，方便在批处理里无脑调用。
+    ///
+    /// # Errors
+    ///
+    /// - 形状像密文但解不开：与 [`decrypt`](Self::decrypt) 相同的错误
+    /// - 解开了但重新加密失败：[`Error::Encrypt`]
+    ///
+    /// 形状**不像**密文时原样返回，不报错。
     pub fn rotate_to_current_key(&self, payload: &str) -> Result<String> {
         if !self.is_encrypted(payload) {
             return Ok(payload.to_owned());

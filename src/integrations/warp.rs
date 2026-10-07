@@ -11,11 +11,16 @@
 //! use encryptable::integrations::warp::with_guard;
 //! use warp::Filter;
 //!
-//! let guard = /* … */;
+//! # fn main() {
+//! let guard = encryptable::Guard::new(
+//!     &encryptable::ArrayConfig::new("0123456789abcdef0123456789abcdef"),
+//! )
+//! .unwrap();
 //! let route = warp::path("encrypt")
 //!     .and(with_guard(guard))
 //!     .map(|guard: Guard| guard.encrypt("13800138000").unwrap_or_default());
 //! # let _ = route;
+//! # }
 //! # }
 //! ```
 //!

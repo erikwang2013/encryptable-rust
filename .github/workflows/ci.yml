@@ -1,0 +1,110 @@
+# Copyright (c) 2026 erik <erik@erik.xyz> — https://erik.xyz
+#
+# 每次推送到 main 与每个 PR 都跑一遍。
+#
+# 分两层：
+#   ① 核心（fmt / clippy / test）—— 默认 feature，一个框架都不拉，最快
+#   ② 矩阵（每个 feature 各一个 job）—— 框架集成的编译与测试，并行跑
+#
+# 之所以把框架拆成矩阵而不是一个 `--all-features`：八个框架的依赖树彼此独立，
+# 全开到一个 job 里既慢又会因为 feature 并集掩盖「单独开某个 feature 编不过」
+# 的问题。矩阵里每个组合都是用户真实可能的用法。
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  CARGO_TERM_COLOR: always
+# 有意**不**设 `RUSTFLAGS: -D warnings`：那会把「任何一种警告」都变成硬失败，
+# 包括依赖树里的警告、以及在 MSRV 那台旧编译器上新出现的 lint —— 于是 CI 会在
+# 一次无关的 Rust 版本升级后集体变红。严格只在 clippy 那一关执行
+# （`-D warnings`），与其他仓库的做法一致。
+
+jobs:
+  fmt:
+    name: Fmt
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - run: cargo fmt --all -- --check
+
+  clippy:
+    name: Clippy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo clippy --all-targets --features serde -- -D warnings
+      # 文档里的 intra-doc 链接断了不该等到发布才发现 —— 加 `-D warnings` 让它
+      # 变成硬失败。这类断链只在 `cargo doc` 时才报，clippy 与 test 都看不见。
+      - run: cargo doc --no-deps --features serde
+        env:
+          RUSTDOCFLAGS: -D warnings
+
+  test:
+    name: Test (default + serde)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test
+      - run: cargo test --features serde
+
+  msrv:
+    name: MSRV 1.88
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # Cargo.toml 声明了 rust-version = "1.88"，那就得真的验一下 ——
+      # 否则「支持 1.88」只是一句没人检查的话
+      - uses: dtolnay/rust-toolchain@1.88
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo check --all-targets
+
+  features:
+    name: Feature ${{ matrix.feature }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        feature:
+          - serde
+          - axum
+          - actix-web
+          - rocket
+          - poem
+          - salvo
+          - warp
+          - bee-rust
+          - ecat
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.feature }}
+      - run: cargo test --features ${{ matrix.feature }}
+
+  package:
+    name: Package
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # 打好的包必须自身能编译 —— 这是 crates.io 上会发生的事，
+      # 而 docs/pet.svg 被 include_str! 在编译期读取，漏发会当场暴露
+      - run: cargo publish --dry-run --allow-dirty

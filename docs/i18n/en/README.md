@@ -141,6 +141,7 @@ encryptable-rust/
 │   ├── social-preview.svg     its editable source
 │   ├── alipay.png             donation QR code
 │   └── weixinpay.png          donation QR code
+├── .github/workflows/ci.yml   CI: fmt · clippy · test · MSRV 1.88 · one matrix job per feature · packaging
 └── Cargo.toml                 default dependencies are only aes-gcm / aes / zeroize / base64
 ```
 
@@ -575,7 +576,7 @@ cargo clippy --all-targets -- -D warnings
 cargo fmt --all -- --check
 ```
 
-The default build has **145 tests passing** (plus 1 that is `#[ignore]`d by default and needs a real MySQL), and `--features serde` gives **151**. Each framework feature brings its own set of adapter tests (3–7 of them), compiled only when that feature is on:
+The default build has **146 tests passing** (plus 1 that is `#[ignore]`d by default and needs a real MySQL), and `--features serde` gives **152**. Each framework feature brings its own set of adapter tests (3–7 of them), compiled only when that feature is on:
 
 ```bash
 cargo test --features axum        # one set per framework

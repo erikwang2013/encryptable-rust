@@ -15,7 +15,10 @@
 //! }
 //!
 //! # fn main() {
-//! let guard = /* … */;
+//! let guard = encryptable::Guard::new(
+//!     &encryptable::ArrayConfig::new("0123456789abcdef0123456789abcdef"),
+//! )
+//! .unwrap();
 //! let rocket: Rocket<Build> = rocket::build().manage(guard).mount("/", routes![store_phone]);
 //! # let _ = rocket;
 //! # }

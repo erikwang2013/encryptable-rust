@@ -141,6 +141,7 @@ encryptable-rust/
 │   ├── social-preview.svg     它的可编辑源文件
 │   ├── alipay.png             打赏码
 │   └── weixinpay.png          打赏码
+├── .github/workflows/ci.yml   CI：fmt · clippy · test · MSRV 1.88 · 每个 feature 一个矩阵 job · 打包
 └── Cargo.toml                 默认依赖只有 aes-gcm / aes / zeroize / base64
 ```
 
@@ -575,7 +576,7 @@ cargo clippy --all-targets -- -D warnings
 cargo fmt --all -- --check
 ```
 
-默认构建 **145 个测试通过**（另有 1 个默认 `#[ignore]`，它要连真实 MySQL），`--features serde` 是 **151 个**。每个框架 feature 各自再带一套适配层测试（3–7 个不等），只在开启该 feature 时编译：
+默认构建 **146 个测试通过**（另有 1 个默认 `#[ignore]`，它要连真实 MySQL），`--features serde` 是 **152 个**。每个框架 feature 各自再带一套适配层测试（3–7 个不等），只在开启该 feature 时编译：
 
 ```bash
 cargo test --features axum        # 每个框架一套

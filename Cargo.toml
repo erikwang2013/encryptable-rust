@@ -2,7 +2,7 @@
 
 [package]
 name = "encryptable-rust"
-version = "1.2.0"
+version = "1.2.1"
 edition = "2024"
 rust-version = "1.88"
 description = "为敏感字段提供「可检索的匿名化 / 加密」能力：写入数据库前加密，读出时解密，并可生成与 MySQL / PostgreSQL 兼容的 SQL 片段"
@@ -41,7 +41,10 @@ aes-gcm = { version = "0.10", features = ["zeroize"] }
 # docs 里「不引入 ecb crate」的说明（ecb 0.2 走 cipher 0.5，与 aes-gcm 0.10
 # 的 cipher 0.4 不兼容，引进来会拖入第二套 AES 栈）。
 aes = { version = "0.8", features = ["zeroize"] }
-zeroize = { version = "1", features = ["zeroize_derive"] }
+# 不启用 `zeroize_derive`：本 crate 没有一处 `derive(Zeroize)`，用到的只有
+# `Zeroizing` 包装类型，那在 `zeroize` 本体里。开着一个用不上的 proc-macro
+# feature 只是白编译。
+zeroize = "1"
 base64 = "0.22"
 
 serde = { version = "1", features = ["derive"], optional = true }
@@ -58,10 +61,15 @@ rocket = { version = "0.5", optional = true }
 poem = { version = "3", optional = true }
 salvo = { version = "1", optional = true }
 warp = { version = "0.4", optional = true }
-# bee-rust 的路由/上下文层
-bee_router = { version = "1", optional = true, default-features = false }
-# e-cat 的中间件层（其 feature 只有 cors / redis，默认不额外拉东西）
-ecat-middleware = { version = "4", optional = true, default-features = false }
+# 注意这里**没有** bee_router / ecat-middleware 依赖：两个适配层其实都用不到它们。
+# bee-rust 的路由直接接收 axum handler，e-cat 的中间件就是标准的 tower
+# Layer/Service —— 所以适配层只依赖 axum（+ tower/http 那两个 trait 来源）。
+#
+# 之前挂着这两个依赖是错的想法（以为能「对齐版本」）：它们一行都没被引用，
+# 却让 `bee-rust` feature 的依赖树从 91 涨到 171 个 crate，其中 80 个来自
+# bee_router 自己的子树。用户本来就会依赖 bee_rust / e-cat，我这边再拉一份
+# 除了拖慢编译没有任何作用。
+#
 # e-cat 的 guard 要写成 tower Layer/Service，这两个 crate 提供那两个 trait
 tower = { version = "0.5", optional = true }
 http = { version = "1", optional = true }
@@ -85,14 +93,14 @@ rocket = ["dep:rocket"]
 poem = ["dep:poem"]
 salvo = ["dep:salvo"]
 warp = ["dep:warp"]
-# bee-rust 的路由层（bee_router）直接吃 axum handler，状态也走 axum 的 State，
-# 所以 axum 适配层在这里原样可用，顺带把它带上。
+# bee-rust 的路由直接吃 axum handler，状态也走 axum 的 State，所以适配层就是
+# axum 那一层 —— 这个 feature 只是把 axum 带上，不额外拉 bee_router（见上方依赖区的说明）。
 # feature 名带连字符（`bee-rust`），但 Rust 的模块标识符不能含连字符，
 # 对应的模块是 `integrations::bee_rust` —— 两者指的是同一个东西。
-bee-rust = ["axum", "dep:bee_router"]
+bee-rust = ["axum"]
 # e-cat 同样是 axum + tower 的组合：HTTP 传输层是 axum，中间件是 tower Layer。
 # 它的 guard 形态是「往请求扩展里塞东西」，多需要 tower 与 http 两个 trait 来源。
-ecat = ["axum", "dep:ecat-middleware", "dep:tower", "dep:http"]
+ecat = ["axum", "dep:tower", "dep:http"]
 
 [dev-dependencies]
 # 集成测试要拆载荷看字节，直接用主依赖的同一个 base64（同一个版本，不额外拉包）

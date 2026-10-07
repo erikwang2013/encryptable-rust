@@ -86,6 +86,12 @@ impl Value {
     ///
     /// 载荷长度必须与类型字节**严格**吻合：多一个字节也报错。放着不管的话，
     /// 未来版本往载荷尾部加字段时，老代码会把新体当旧体静默读掉。
+    ///
+    /// # Errors
+    ///
+    /// 一律返回 [`Error::Unserialize`]，情况有四：载荷为空（连类型字节都没有）、
+    /// 类型字节不在 `0x00`–`0x04` 内、定长类型的载荷长度不对（int/float 必须正好
+    /// 8 字节，bool 必须正好 1 字节且为 0/1）、字符串不是合法 UTF-8。
     pub fn decode(bytes: &[u8]) -> Result<Self> {
         let (first, rest) = bytes
             .split_first()

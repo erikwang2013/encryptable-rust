@@ -22,6 +22,11 @@ pub struct Key {
 
 impl Key {
     /// 从字节构造，并校验长度符合密码要求。
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::KeyLength`] —— 字节数与 `cipher.key_len()` 不符。**绝不**截断
+    ///   或补零，理由见本类型的文档
     pub fn from_bytes(bytes: Vec<u8>, cipher: Cipher) -> Result<Self> {
         let expected = cipher.key_len();
         if bytes.len() != expected {
@@ -45,6 +50,13 @@ impl Key {
     ///
     /// 第 2 条与 PHP 版不同（PHP 只认 `base64:` 和字面量）。加它是因为 SQL 片段
     /// 要把密钥以 hex 嵌进去，让运维手上就能有一份同样的表示。
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::MissingKey`] —— 输入为空或只有空白
+    /// - [`Error::InvalidKeyBase64`] —— `base64:` 后面不是合法 base64，或 hex 解不开
+    /// - [`Error::KeyLength`] —— 解出来的字节数与密码要求不符。**裸 base64 会撞在这条上**
+    ///   （44 个字符按字面量算是 44 字节），得写成 `base64:` 前缀形式
     pub fn parse(raw: &str, cipher: Cipher) -> Result<Self> {
         let raw = raw.trim();
 
@@ -139,7 +151,12 @@ impl KeyRing {
         self.keys.len()
     }
 
-    /// 环上是否只有主密钥。
+    /// 恒为 `false`。
+    ///
+    /// 环按构造至少含主密钥（[`KeyRing::new`] 第一件事就是 `vec![primary]`），
+    /// 「空环」这个状态不存在。保留它是为了让 `len()` 有个配对的 `is_empty()`
+    /// （`clippy::len_without_is_empty`），**别拿它当「守卫配没配密钥」的判据** ——
+    /// 那个问题该看 `len() == 1`，即「只有主密钥、环上没有退役密钥」。
     pub fn is_empty(&self) -> bool {
         self.keys.is_empty()
     }
@@ -264,6 +281,18 @@ mod tests {
         assert_eq!(order[0], primary.as_bytes());
         assert_eq!(order[1], k2.as_bytes());
         assert_eq!(order[2], k3.as_bytes());
+    }
+
+    /// 钉住「环永远不空」这条不变量 —— 上面 `is_empty` 的文档就是靠它成立的。
+    #[test]
+    fn a_ring_is_never_empty() {
+        let primary = Key::parse(K32, Cipher::Aes256Gcm).unwrap();
+        assert!(!KeyRing::new(primary.clone(), vec![]).is_empty());
+        assert!(!KeyRing::new(primary, vec![]).is_empty());
+        assert_eq!(
+            KeyRing::new(Key::parse(K32, Cipher::Aes256Gcm).unwrap(), vec![]).len(),
+            1
+        );
     }
 
     #[test]

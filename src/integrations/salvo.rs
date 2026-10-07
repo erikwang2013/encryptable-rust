@@ -15,9 +15,19 @@
 //! }
 //!
 //! # fn main() {
-//! let guard = /* … */;
-//! let router = Router::new().hoop(affix_state::inject(guard)).get(store_phone);
-//! # let _ = router;
+//! let guard = encryptable::Guard::new(
+//!     &encryptable::ArrayConfig::new("0123456789abcdef0123456789abcdef"),
+//! )
+//! .unwrap();
+//!
+//! // 把守卫放进 Depot。生产里通常用 salvo_extra 的
+//! // `affix_state::inject(guard)`（需要开 salvo 的 `affix-state` feature）；
+//! // 这里直接放，好让这段示例只依赖 salvo 核心。
+//! let mut depot = Depot::new();
+//! depot.insert_typed(guard);
+//!
+//! let router = Router::new().get(store_phone);
+//! # let _ = (router, depot);
 //! # }
 //! # }
 //! ```

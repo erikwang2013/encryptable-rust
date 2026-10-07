@@ -90,6 +90,14 @@ impl EcbCipher {
 
 impl DbEncrypter {
     /// 从配置构造，构造时即校验密码必须是确定性的。
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::MissingKey`] —— 配置里没有密钥
+    /// - [`Error::MissingCipher`] / [`Error::UnsupportedCipher`] —— 密码为空或不在白名单内
+    /// - [`Error::CipherNotUsable`] —— 配了非确定性密码（本路径只收 ECB）
+    /// - [`Error::InvalidKeyBase64`] —— `base64:` 前缀后面的内容解不开
+    /// - [`Error::KeyLength`] —— 密钥字节数与密码要求不符
     pub fn new<C: EncryptableConfig + 'static>(config: &C) -> Result<Self> {
         let cipher = if config.cipher().trim().is_empty() {
             return Err(Error::MissingCipher);
@@ -143,6 +151,12 @@ impl DbEncrypter {
     ///
     /// 入参是字符串而不是类型信封：SQL 需要看到**逐字节的原值**，套一层类型字节
     /// 会让数据库里躺着的明文带上信封头，`WHERE` 比对也就对不上了。
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::WrongFormat`] —— 输入是**应用侧**密文（格式字节 `0x01`）。
+    ///   这条是刻意拦的：不拦就会把应用侧密文当明文再加密一遍，静默产生解不开的数据
+    /// - [`Error::Encrypt`] —— 底层 ECB 加密失败
     pub fn encrypt(&self, plaintext: &str) -> Result<String> {
         // 只拦「看起来是应用侧载荷」的输入。不能拦「首字节不是 0x02」的一切 ——
         // 一段恰好是合法 base64 的普通明文（比如 16 个 'a'，解出来首字节 0x69）
@@ -166,6 +180,17 @@ impl DbEncrypter {
 
     /// 解密自己产出的载荷。用于迁移与 CLI，**不用于查询** ——
     /// 查询请用 [`decrypt_expr`](Self::decrypt_expr) 让数据库自己解。
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::Base64`] —— 载荷不是合法 base64
+    /// - [`Error::WrongFormat`] —— 载荷是**应用侧**密文，走错了加密器
+    /// - [`Error::Decrypt`] —— 版本字节陌生、长度不足或不是块长的整数倍、
+    ///   PKCS#7 补位不自洽、解密结果不是合法 UTF-8
+    ///
+    /// 注意：**密钥错**通常不在这条清单里。ECB 没有认证，错密钥解出来多半是
+    /// 乱码字节 —— 补位校验会碰巧挡住一部分，剩下的会以「不是合法 UTF-8」报出来，
+    /// 但也可能原样返回一段看起来正常的乱码。这是 ECB 的固有性质，不是实现缺陷。
     pub fn decrypt(&self, payload: &str) -> Result<String> {
         let decoded = base64::engine::general_purpose::STANDARD
             .decode(payload)
@@ -196,19 +221,29 @@ impl DbEncrypter {
             )));
         }
 
-        let mut data = decoded[1..].to_vec();
-        if !data.len().is_multiple_of(BLOCK) {
-            return Err(Error::Decrypt(format!(
-                "密文 {} 字节，不是 {BLOCK} 的整数倍",
-                data.len()
-            )));
-        }
+        // 就地处理 `decoded`，不再另拷两份。
+        //
+        // 原先写的是 `decoded[1..].to_vec()`（拷 1）再 `plain.to_vec()`（拷 2），
+        // 每次解密白做两次堆分配。版本字节拿切片跳过、补位就地截掉即可，
+        // 最后 `String::from_utf8` 直接接管同一个缓冲（它只校验 UTF-8，不拷贝）。
+        let mut data = decoded;
+        let plain_len = {
+            let body = &mut data[1..];
+            if !body.len().is_multiple_of(BLOCK) {
+                return Err(Error::Decrypt(format!(
+                    "密文 {} 字节，不是 {BLOCK} 的整数倍",
+                    body.len()
+                )));
+            }
 
-        self.cipher.decrypt_blocks(&mut data);
-        let plain = pkcs7_unpad(&data)?;
+            self.cipher.decrypt_blocks(body);
+            pkcs7_unpad(body)?.len()
+        };
 
-        String::from_utf8(plain.to_vec())
-            .map_err(|_| Error::Decrypt("解密结果不是合法 UTF-8".into()))
+        data.truncate(1 + plain_len); // 截掉 PKCS#7 补位
+        data.remove(0); // 去掉版本字节（一次 memmove，不额外分配）
+
+        String::from_utf8(data).map_err(|_| Error::Decrypt("解密结果不是合法 UTF-8".into()))
     }
 
     /// 廉价判定：形状上像不像 DB 侧密文。
@@ -242,6 +277,13 @@ impl DbEncrypter {
     ///
     /// 密钥用 **hex** 而非带引号的字符串：片段里因此不含任何 `'`，
     /// 转义漏一个字符导致注入的可能性也就不存在了。
+    ///
+    /// # Errors
+    ///
+    /// - [`Error::InvalidColumnRef`] —— 列名不匹配 `^[A-Za-z_][A-Za-z0-9_.]*$`，
+    ///   或含空的点分段（`a..b`、`a.`）。这是这条路径上唯一的注入面，所以是白名单不是转义
+    ///
+    /// 密钥长度、密码可用性等配置错误在构造时就已经报过了，这里不会再报。
     pub fn decrypt_expr(&self, column: &str, driver: DbDriver) -> Result<String> {
         validate_column(column)?;
         let hex = self.key.to_hex();
@@ -258,6 +300,10 @@ impl DbEncrypter {
     }
 
     /// 用构造时的方言生成 SQL 表达式。
+    ///
+    /// # Errors
+    ///
+    /// 与 [`decrypt_expr`](Self::decrypt_expr) 相同：[`Error::InvalidColumnRef`]。
     pub fn decrypt_expr_default(&self, column: &str) -> Result<String> {
         let driver = self.driver;
         self.decrypt_expr(column, driver)
