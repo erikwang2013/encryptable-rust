@@ -55,7 +55,7 @@ base64 = "0.22"
 # 一把主密钥会同时拆掉机密性与完整性（完整论证见 src/support/subkeys.rs）。
 # 两个都是纯 Rust 小依赖，与 security-rust 的极简取向一致。
 hkdf = "0.12"
-sha2 = "0.10"
+sha2 = "0.11"
 
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }
