@@ -4,7 +4,7 @@
 
 <img src="../../pet.svg" alt="Locky · 小锁灵 — the project pet" width="26"> [简体中文](../../../README.md) · **English (this page)**
 
-Query-friendly anonymization / encryption for sensitive columns: encrypt before persisting, decrypt on read, and emit MySQL / PostgreSQL-compatible SQL fragments for comparing against encrypted columns. A Rust port of the PHP package [`erikwang2013/encryptable`](https://github.com/erikwang2013/encryptable), it uses two paths to split apart the pair of requirements that usually cannot both be met — "encrypt at rest" and "query by original value": the application side AES-256-GCM (random nonce, authenticated, **the default choice**), the DB side AES-256-ECB (deterministic, reserved for columns that must be matched by original value inside a `WHERE`). Each path derives **its own subkey** from the primary key via HKDF — see [Key separation](#key-separation-why-the-db-side-must-not-use-the-primary-key-directly).
+Query-friendly anonymization / encryption for sensitive columns: encrypt before persisting, decrypt on read, and emit MySQL / PostgreSQL-compatible SQL fragments for comparing against encrypted columns. It uses two paths to split apart the pair of requirements that usually cannot both be met — "encrypt at rest" and "query by original value": the application side AES-256-GCM (random nonce, authenticated, **the default choice**), the DB side AES-256-ECB (deterministic, reserved for columns that must be matched by original value inside a `WHERE`). Each path derives **its own subkey** from the primary key via HKDF — see [Key separation](#key-separation-why-the-db-side-must-not-use-the-primary-key-directly).
 
 Project pet **Locky · 小锁灵** ([`docs/pet.svg`](../../pet.svg)) — the amber one on the key ring is the current primary key; the two grey ones are `previous_keys`.
 
@@ -191,7 +191,7 @@ Which makes "configure both paths with the same primary key" safe — and the re
 - **Purpose subkeys are derived at construction time** — HKDF-SHA256 gives each path its own subkey (see "Key separation"), with every key on the ring deriving its own.
 - **Keys are wrapped in `Zeroizing` in memory, and `Debug` is hand-written to redact** — the `format!("…{x:?}")` of `Key`, `ArrayConfig`, `EnvConfig` and `Guard` prints only byte counts or placeholders; no stray `dbg!` or error message can leak the primary key. `Value`'s `Debug` redacts string payloads too (it carries plaintext).
 - **Failures are not silent** — what will not decrypt is an error; there is no "return the original on failure" fallback, which is the main way plaintext gets quietly written into an encrypted column. When you really need it, use `decrypt_or_original` so the decision appears explicitly at the call site. The DB path ignoring `previous_keys` also prints a warning to stderr rather than leaving you to discover one day that the SQL side is all NULLs.
-- **A type mismatch is an error, not a guess** — binary type envelope, an `int` payload must be exactly 8 bytes, one byte more is an error too. The PHP version's `integer:"abc"` silently becomes `0`; here it is `Error::Unserialize`.
+- **A type mismatch is an error, not a guess** — binary type envelope, an `int` payload must be exactly 8 bytes, one byte more is an error too; and a mismatch between type and payload is never silently coerced (`"abc"` does not become `0`) — it is `Error::Unserialize`.
 - **`#![forbid(unsafe_code)]`** — not a single line of `unsafe` in the whole crate.
 - **No dependency for what a few dozen lines can do** — hand-written `Display` instead of `thiserror`; hand-written PKCS#7 + ECB instead of the `ecb` crate; hand-written column-name allowlist instead of `regex`; hand-written CLI argument parsing instead of `clap`. The one exception is security primitives: HKDF uses `hkdf` + `sha2` — cryptography is not hand-written.
 
@@ -203,13 +203,12 @@ Which makes "configure both paths with the same primary key" safe — and the re
 | Raw primary key vs purpose subkeys | Subkeys (HKDF-SHA256) | DB-side ECB maps any block to `E_K(block)` — an encryption oracle; sharing one primary key with GCM breaks confidentiality and integrity at once (NIST SP 800-57: a GCM key must be used for one purpose only) |
 | Format replacement vs in-place semantic change | New version bytes `0x03`/`0x04` + dual read | Upgrading never touches old ciphertext — new writes, old reads; the old formats are only retired after `rotate_to_current_key()` has moved them |
 | Determinism vs semantic security | Deterministic only on the DB side | The application side keeps the semantic security of a random nonce; determinism is the entry fee for "query by original value", paid only on the columns that need it |
-| Binary envelope vs text envelope | Binary | The PHP version goes through `settype()`, where `integer:"abc"` silently becomes `0`; the binary envelope errors out on a type mismatch |
-| GCM tag vs hand-rolled HMAC | GCM tag | PHP prepended a 32-byte HMAC to DB-side ciphertext purely so SQL could strip it with `SUBSTRING(..., 33)`; the DB side never verified it — dropped here, the position goes to the version byte and SQL only needs `SUBSTRING(..., 2)` |
+| Binary envelope vs text envelope | Binary | A text envelope silently turns `integer:"abc"` into `0`; the binary envelope errors out on a type mismatch |
+| GCM tag vs hand-rolled HMAC | GCM tag | A 32-byte HMAC prepended to DB-side ciphertext only exists for SQL to strip back off with `SUBSTRING(..., 33)` — and the DB side never verifies it, making it pure filler; those 32 bytes go to the version byte instead, and SQL only needs `SUBSTRING(..., 2)` |
 | Hand-written ECB vs the `ecb` crate | Hand-written | `ecb` 0.2 rides cipher 0.5, incompatible with the cipher 0.4 of `aes-gcm` 0.10; pulling it in would drag in a second AES stack |
 | Strict decryption vs lenient fallback | Strict | A lenient fallback is the main way plaintext gets quietly written into the store; the lenient version is demoted to an explicit `decrypt_or_original` |
 | Key as hex vs as a quoted string | hex | The SQL fragment therefore contains no `'` at all, so a missed escape turning into injection is not a possibility — the fragment holds only three fixed constants: `'UTF8'` / `'base64'` / `'aes-ecb'` |
-| Byte-level interop with PHP | Not done | The envelope was redesigned (hand-rolled HMAC removed, the `crypt:` dirty bit removed, the non-AEAD branch removed); existing columns must be migrated by re-encrypting on the application side |
-| `ENCRYPTION_PREVIOUS_KEYS` accepting a JSON array | Rejected | PHP takes whatever you give it; splitting `["k1","k2"]` on commas yields two **wrong** keys, and a wrong key fails silently inside the key ring — decryption skips it and keeps trying, and finally reports only "all failed", so nobody can tell the real cause was the config format. Better to blow up while reading the config |
+| `ENCRYPTION_PREVIOUS_KEYS` accepting a JSON array | Rejected | Splitting `["k1","k2"]` on commas yields two **wrong** keys, and a wrong key fails silently inside the key ring — decryption skips it and keeps trying, and finally reports only "all failed", so nobody can tell the real cause was the config format. Better to blow up while reading the config |
 
 ---
 
@@ -284,7 +283,7 @@ The input is a string rather than a type envelope — see the previous section.
 | Source | Entry point | Notes |
 |--------|-------------|-------|
 | Code | `ArrayConfig::new(key)` | `.with_cipher()` / `.with_previous_keys()` / `.with_db_driver()` |
-| Environment | `EnvConfig::from_env()` | `ENCRYPTION_KEY` / `ENCRYPTION_CIPHER` / `ENCRYPTION_PREVIOUS_KEYS` / `ENCRYPTION_DB_DRIVER`, variable names character-for-character identical to the PHP version, so ops deployment scripts can be copied over |
+| Environment | `EnvConfig::from_env()` | `ENCRYPTION_KEY` / `ENCRYPTION_CIPHER` / `ENCRYPTION_PREVIOUS_KEYS` / `ENCRYPTION_DB_DRIVER`, a fixed `ENCRYPTION_*` set of names deployment scripts can rely on as-is |
 | Tests | `EnvConfig::from_env_with(\|k\| ...)` | Injects the getter function and touches no process environment — `set_var` is `unsafe` in Rust 2024, and it data-races with threads reading env vars concurrently |
 
 Accepted spellings for the key: a literal exactly the length the cipher requires, a hex string exactly **twice** the length the cipher requires (64 characters for a 256-bit cipher, 32 for a 128-bit one), or a `base64:` prefix. The spellings are equivalent; `encryptable keygen` prints two of the usable spellings (hex and the `base64:` prefix) — bare base64 does not work, since 44 characters counted as a literal is 44 bytes, and the length check rejects it.
@@ -411,15 +410,15 @@ MySQL's `block_encryption_mode` session variable defaults to `aes-128-ecb`, and 
 SET block_encryption_mode = 'aes-256-ecb';
 ```
 
-Otherwise MySQL silently XOR-folds the 32-byte key down to the 16 bytes it expects and **returns NULL without an error** — you get the hardest-to-debug symptom there is: "the query runs, the result is empty". This is **a defect lying dormant in the original PHP project**: the Rust version did not inherit it (the key length is fixed by the cipher at construction), but the default on the database side is not this library's to control — it can only be pointed out here.
+Otherwise MySQL silently XOR-folds the 32-byte key down to the 16 bytes it expects and **returns NULL without an error** — you get the hardest-to-debug symptom there is: "the query runs, the result is empty". This library cannot stop it: the key length is fixed by the cipher at construction, but which mode `AES_DECRYPT` runs under is decided by the database's session variable — so it can only be pointed out here.
 
 ### PostgreSQL and MySQL fail differently
 
 `convert_from` **aborts the whole query with an error** on non-UTF-8 bytes; MySQL's `CONVERT(... USING 'UTF8')` returns NULL instead. The same cause (a misconfigured key, say) shows up as two different symptoms: "the query blew up" on one side, "the results are all NULL" on the other.
 
-### No byte-level PHP interop
+### The payload format is private to this library
 
-This is **deliberate**, not "just not done yet": the envelope was redesigned (hand-rolled HMAC removed, the `crypt:` dirty bit removed, the non-AEAD branch removed). Ciphertext written by PHP cannot be read by Rust, and vice versa. Existing columns must be migrated by re-encrypting on the application side.
+This is **deliberate**, not "just not done yet": the envelope is defined entirely by this library — no hand-rolled HMAC prepended to ciphertext (the DB side never verifies it), no non-AEAD branch. The library therefore recognises only ciphertext it wrote itself: **any other format simply will not decrypt**. Columns already holding such data must be migrated by re-encrypting on the application side.
 
 ### `is_encrypted` is a cheap shape check with false positives
 
@@ -427,7 +426,7 @@ It only does a length gate + base64 decoding + version byte + minimum length; it
 
 The two **false-rejection** gates have ceilings too. `DbEncrypter::encrypt` refuses inputs that are ≥ 40 characters and look like application-side payloads — short `AQ…`-style business codes are no longer caught by mistake (that used to be a hard defect), but long-enough lookalikes still are; the escape hatch is `seal()`. The reverse direction, application-side `encrypt()`, deliberately refuses nothing (see "Key separation" above).
 
-Incidentally: `encrypt()` does **not** use the shape check internally to decide "should this be encrypted again" — it genuinely attempts a decryption, precisely to avoid the pit the PHP version fell into (plaintext that looks like ciphertext being stored as-is and never decryptable again).
+Incidentally: `encrypt()` does **not** use the shape check internally to decide "should this be encrypted again" — it genuinely attempts a decryption, precisely to avoid the pit where plaintext that looks like ciphertext gets stored as-is and is never decryptable again.
 
 ### The DB path ignores `previous_keys`
 
@@ -644,7 +643,7 @@ ENCRYPTION_TEST_MYSQL=mysql://user:pass@localhost/db cargo test --test db_sql --
 There are two correctness anchors:
 
 - **Golden vectors: byte-for-byte alignment with an independent implementation.** The DB path's PKCS#7 + ECB is hand-written, and two sets of golden vectors in `src/encrypter/db/tests.rs` pin it down: the current format (`0x04`, HKDF subkey) is recomputed independently with Python's `cryptography` and cross-checked against `openssl enc -aes-256-ecb -K <subkey> -nosalt`; the 1.2.x `0x02` vectors (raw primary key) became the **dual-read regression anchor** — decrypt-only, guaranteeing old ciphertext still opens. This is the only CI-verifiable proxy for "can the database read the bytes we write" — one padding block short, one byte-order slip, and this test goes red.
-- **Properties: `tests/invariants.rs`.** Having given up byte-level interop with PHP, this crate has no ready-made cross-language vector to align with; instead there is a set of invariants: round-trip identity, tampering always rejected, wrong key always rejected, random nonces never repeating, DB-path determinism, and the two payload kinds never working with each other. The corpora are generated by a hand-written LCG rather than `proptest` / `quickcheck` — deterministic, reproducible, zero dependencies.
+- **Properties: `tests/invariants.rs`.** This layer pins behaviour rather than bytes — a set of invariants: round-trip identity, tampering always rejected, wrong key always rejected, random nonces never repeating, DB-path determinism, and the two payload kinds never working with each other. The corpora are generated by a hand-written LCG rather than `proptest` / `quickcheck` — deterministic, reproducible, zero dependencies.
 
 The whole rotation migration path (swap the primary key → old key into the ring → batch move → removal) is in `tests/rotation.rs`.
 
@@ -653,14 +652,6 @@ A runnable demo of both paths plus one complete rotation is in `examples/quickst
 ```bash
 cargo run --example quickstart
 ```
-
----
-
-## Reference: the original project
-
-A Rust port of the PHP package **erikwang2013/encryptable**: <https://github.com/erikwang2013/encryptable>.
-
-The two sides' **ciphertexts do not interoperate** (the envelope was redesigned, see "Known limits"), but **the configuration can be copied over** — the `ENCRYPTION_*` variable names, the cipher names (`aes-256-gcm` / `aes-256-ecb`) and the column-name spelling all match, so ops deployment scripts need no changes.
 
 ---
 

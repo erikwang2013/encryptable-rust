@@ -11,7 +11,7 @@ use zeroize::Zeroizing;
 use super::{DbDriver, EncryptableConfig};
 use crate::support::previous_keys;
 
-/// 环境变量名，与 PHP 版逐字一致 —— 运维的部署脚本可以照搬。
+/// 环境变量名 —— 部署脚本里写的就是这几个名字，不必改名。
 pub mod vars {
     /// 主密钥。
     pub const KEY: &str = "ENCRYPTION_KEY";
@@ -179,7 +179,7 @@ mod tests {
     #[test]
     fn cipher_falls_back_to_the_default() {
         assert_eq!(env(&[]).unwrap().cipher(), "aes-256-gcm");
-        // 空串等同未设置 —— 与 PHP 版 EnvEncryptableConfig 一致
+        // 空串等同未设置 —— 只声明了空变量的部署环境应当落到默认值
         assert_eq!(env(&[(vars::CIPHER, "")]).unwrap().cipher(), "aes-256-gcm");
         assert_eq!(
             env(&[(vars::CIPHER, "  ")]).unwrap().cipher(),

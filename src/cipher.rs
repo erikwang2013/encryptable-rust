@@ -12,8 +12,8 @@ use crate::error::{Error, Result};
 
 /// 支持的块密码。
 ///
-/// 这些名字与 PHP 版 `openssl_*` 接受的名字逐字一致 —— 配置在两个生态之间
-/// 可以照抄，虽然**密文**不互通（Rust 版用了自己的信封）。
+/// 这些名字与 OpenSSL 的 `openssl_*` 接受的名字逐字一致 —— 配置沿用这些
+/// 名字即可，虽然**密文**不互通（本 crate 用了自有的信封）。
 ///
 /// `#[non_exhaustive]`：白名单将来可能扩容，**下游的 `match` 请带 `_` 分支**。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -84,7 +84,7 @@ impl Cipher {
 impl FromStr for Cipher {
     type Err = Error;
 
-    /// 大小写不敏感，与 PHP 版一致（PHP 会把配置值先 `strtolower`）。
+    /// 大小写不敏感（首尾空白也一并忽略）：配置里怎么写都不影响解析。
     fn from_str(s: &str) -> Result<Self> {
         let lower = s.trim().to_ascii_lowercase();
         Self::ALL
@@ -122,7 +122,7 @@ mod tests {
 
     #[test]
     fn rejects_non_whitelist_ciphers() {
-        // PHP 版的测试里点名拒绝的就是这几个
+        // 常见的误配：过时的算法、白名单外的位数、不在此族的密码
         for bad in ["des-ecb", "rc4", "aes-192-gcm", "", "chacha20-poly1305"] {
             assert!(
                 matches!(Cipher::from_str(bad), Err(Error::UnsupportedCipher(_))),

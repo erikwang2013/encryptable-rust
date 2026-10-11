@@ -13,8 +13,8 @@ pub type Result<T> = std::result::Result<T, Error>;
 
 /// encryptable 的全部失败形态。
 ///
-/// 对照 PHP 版的 6 个异常类，这里塌缩成一个枚举 —— `match` 能穷尽，
-/// 调用方不必为「该 catch 哪一个」翻文档。
+/// 这里把全部失败形态塌缩成一颗枚举 —— `match` 能穷尽，
+/// 调用方不必为「该处理哪一种」翻文档。
 ///
 /// `#[non_exhaustive]`：变体将来可能增加（比如新的格式诊断），**下游的
 /// `match` 请带 `_` 分支**。这是 1.3.0 特意收紧的：等到有下游之后再加，
@@ -22,7 +22,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 #[derive(Debug, Clone, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum Error {
-    /// 没有配置密钥（PHP `MissingEncryptionKeyException`）。
+    /// 没有配置密钥。
     MissingKey,
     /// 密钥带 `base64:` 前缀但内容不是合法 base64。
     InvalidKeyBase64,
@@ -59,9 +59,9 @@ pub enum Error {
     Decrypt(String),
     /// base64 编解码失败。
     Base64(String),
-    /// 值无法进类型信封（PHP `SerializationException`）。
+    /// 值无法进类型信封。
     Serialize(String),
-    /// 载荷无法出类型信封 —— 类型字节陌生，或字节数与该类型不符（PHP `UnserializationException`）。
+    /// 载荷无法出类型信封 —— 类型字节陌生，或字节数与该类型不符。
     Unserialize(String),
     /// SQL 片段的列名不是合法标识符（注入防护）。
     InvalidColumnRef(String),

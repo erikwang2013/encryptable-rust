@@ -148,8 +148,8 @@ fn encrypt_does_not_double_wrap() {
     assert_eq!(once, twice);
 }
 
-/// PHP 版的坑：一段 base64 解出来首字节恰好是格式字节的**明文**会被误判成密文
-/// 然后直接存库。这里因为真的试了一次认证，它会照常被加密。
+/// 著名陷阱：一段 base64 解出来首字节恰好是格式字节的**明文**会被误判成密文
+/// 然后直接存库，从此解不开。这里因为真的试了一次认证，它会照常被加密。
 #[test]
 fn plaintext_that_looks_like_ciphertext_is_still_encrypted() {
     let e = enc(K1);

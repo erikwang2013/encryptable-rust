@@ -2,8 +2,7 @@
 
 //! 从代码里直接给出的配置。
 //!
-//! 对标 PHP 版的 `Encryption::configure([...])` —— 不依赖环境变量、不依赖任何
-//! 框架容器的一步式入口。
+//! 不依赖环境变量、不依赖任何框架容器的一步式入口。
 
 use zeroize::Zeroizing;
 
@@ -55,8 +54,7 @@ impl std::fmt::Debug for ArrayConfig {
 }
 
 impl ArrayConfig {
-    /// 默认密码，与 PHP 版一致。单一来源在
-    /// [`EncryptableConfig::DEFAULT_CIPHER`]。
+    /// 默认密码。单一来源在 [`EncryptableConfig::DEFAULT_CIPHER`]。
     pub const DEFAULT_CIPHER: &'static str = <Self as EncryptableConfig>::DEFAULT_CIPHER;
 
     /// 给一把主密钥，其余取默认值。
@@ -126,7 +124,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn defaults_match_the_php_package() {
+    fn defaults_are_as_documented() {
         let c = ArrayConfig::default();
         assert_eq!(c.key(), None);
         assert_eq!(c.cipher(), "aes-256-gcm");

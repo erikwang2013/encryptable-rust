@@ -2,9 +2,9 @@
 
 //! 类型信封：把值的类型一起加密进去，解密时才知道该还原成什么。
 //!
-//! PHP 版用的是文本信封（`string:foo` / `integer:5`），还原时走 `settype()`，
-//! 于是 `integer:"abc"` 会**静默变成** `0`。这里换成紧凑二进制：一个类型字节
-//! 加定长载荷，类型对不上就报错，不猜。
+//! 文本信封（`string:foo` / `integer:5`）配宽松的类型还原是反面做法：`integer:"abc"`
+//! 会**静默变成** `0`。这里用紧凑二进制：一个类型字节加定长载荷，类型对不上
+//! 就报错，不猜。
 //!
 //! ```text
 //! tag(1B) 载荷
@@ -28,7 +28,7 @@ mod tag {
 
 /// 可以进类型信封的值。
 ///
-/// 只覆盖 PHP 版支持的同一组标量 —— 数组与结构体必须先由调用方自己编码
+/// 只覆盖标量这一组 —— 数组与结构体必须先由调用方自己编码
 /// （JSON、bincode 等）再当字符串放进来，而不是让信封去猜。
 ///
 /// `Debug` 是手写的：`String` 载荷**不会**被打印出来（见 impl）。
@@ -62,8 +62,8 @@ impl std::fmt::Debug for Value {
 }
 
 impl std::fmt::Display for Value {
-    /// 渲染成字符串。`Null` 渲染为**空串**（对齐 PHP 的 `(string)null`），
-    /// 数字与布尔按各自字面量。
+    /// 渲染成字符串。`Null` 渲染为**空串** —— 空值转字符串就是空，不是字面量
+    /// `"null"`；数字与布尔按各自字面量。
     ///
     /// 主要给 [`decrypt_or_original`](crate::encrypter::AeadEncrypter::decrypt_or_original)
     /// 用：解出来是 `Int(42)` 就该拿到 `"42"`，而不是类型名 —— 后者是静默的
@@ -267,7 +267,7 @@ mod tests {
         assert_eq!(Value::from(Some(7i64)), Value::Int(7));
     }
 
-    /// 这正是 PHP 版的缺陷：`integer:"abc"` 静默变 0。这里必须报错。
+    /// 宽松的类型还原会把 `integer:"abc"` 静默变成 0。这里必须报错。
     #[test]
     fn type_confusion_is_an_error_not_a_coercion() {
         let mut bad = vec![tag::INT];

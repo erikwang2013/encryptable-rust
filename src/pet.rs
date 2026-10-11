@@ -52,8 +52,7 @@ pub const CONTENT_TYPE: &str = "image/svg+xml";
 
 /// SVG 形象，函数形式。
 ///
-/// 与常量 [`SVG`] 是同一份东西，这个形式存在的意义是让调用点读起来像
-/// PHP 版的 `Mascot::svg()`，也方便将来换成按需读取而不改动调用方。
+/// 与常量 [`SVG`] 是同一份东西，函数形式方便将来换成按需读取而不改动调用方。
 ///
 /// ```
 /// assert!(encryptable::pet::svg().starts_with("<svg"));

@@ -56,7 +56,7 @@ const EXIT_USAGE: u8 = 1;
 /// 配置或密码学错误。
 const EXIT_CRYPTO: u8 = 2;
 
-/// 打印用法，并带上项目宠物 —— 与 PHP 版安装时的提示一个用意。显式的
+/// 打印用法，并带上项目宠物 —— 用法界面顺手当成一次打招呼。显式的
 /// `--help` 走这里（stdout、退出码 0）。
 fn print_usage() {
     println!("{}", encryptable::pet::ASCII);

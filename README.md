@@ -4,7 +4,7 @@
 
 <img src="./docs/pet.svg" alt="Locky · 小锁灵 —— 项目宠物" width="26"> **简体中文（本页）** · [English](./docs/i18n/en/README.md)
 
-为敏感字段提供「可检索的匿名化 / 加密」能力：写入数据库前加密，读出时解密，并可生成与 MySQL / PostgreSQL 兼容的 SQL 片段。Rust 移植自 PHP 包 [`erikwang2013/encryptable`](https://github.com/erikwang2013/encryptable)，用两条路径把「落库加密」与「按原值查询」这对通常不可兼得的需求分开处理 —— 应用侧 AES-256-GCM（随机 nonce、带认证，**默认选它**），DB 侧 AES-256-ECB（确定性，只给必须在 `WHERE` 里按原值比对的列）。两条路径各由 HKDF 从主密钥派生**自己的子密钥**，互不触碰 —— 理由见[密钥分离](#密钥分离为什么-db-侧不能直接用主密钥)。
+为敏感字段提供「可检索的匿名化 / 加密」能力：写入数据库前加密，读出时解密，并可生成与 MySQL / PostgreSQL 兼容的 SQL 片段。用两条路径把「落库加密」与「按原值查询」这对通常不可兼得的需求分开处理 —— 应用侧 AES-256-GCM（随机 nonce、带认证，**默认选它**），DB 侧 AES-256-ECB（确定性，只给必须在 `WHERE` 里按原值比对的列）。两条路径各由 HKDF 从主密钥派生**自己的子密钥**，互不触碰 —— 理由见[密钥分离](#密钥分离为什么-db-侧不能直接用主密钥)。
 
 项目宠物 **Locky · 小锁灵**（[`docs/pet.svg`](./docs/pet.svg)）—— 钥匙环上那把琥珀色的是当前主密钥，两把灰色的是 `previous_keys`。
 
@@ -191,7 +191,7 @@ DB  侧用途串："encryptable-rust/db-ecb/v1"
 - **用途子密钥在构造时派生** —— 主密钥经 HKDF-SHA256 派生两条路径各自的子密钥（见「密钥分离」），密钥环上每一把钥匙都各派生各的。
 - **密钥在内存里套 `Zeroizing`，`Debug` 手写遮蔽** —— `Key`、`ArrayConfig`、`EnvConfig`、`Guard` 的 `format!("…{x:?}")` 只会打印字节数或占位符，任何一句 `dbg!` 或错误信息都漏不出主密钥。`Value` 的 `Debug` 同样遮蔽字符串载荷（它承载的是明文）。
 - **失败不静默** —— 解不开就报错，不做「失败返回原文」的兜底：那是明文被悄悄写进加密列的主要途径。确实需要的话用 `decrypt_or_original`，让这个决定显式出现在调用点。DB 路径的 `previous_keys` 被忽略时也会向 stderr 打一条警告，而不是让你某天发现 SQL 一侧全是 NULL。
-- **类型对不上就报错，不猜** —— 二进制类型信封，`int` 载荷必须正好 8 字节，多一个字节也报错。PHP 版的 `integer:"abc"` 静默变 `0`，在这里是 `Error::Unserialize`。
+- **类型对不上就报错，不猜** —— 二进制类型信封，`int` 载荷必须正好 8 字节，多一个字节也报错；类型与载荷不符也不会被静默转换（`"abc"` 不会变成 `0`），而是 `Error::Unserialize`。
 - **`#![forbid(unsafe_code)]`** —— 整个 crate 没有一行 `unsafe`。
 - **不为几十行的事加依赖** —— 手写 `Display` 而不引 `thiserror`；手写 PKCS#7 + ECB 而不引 `ecb` crate；手写列名白名单而不引 `regex`；CLI 手写参数解析而不引 `clap`。唯一的例外是安全原语：HKDF 用 `hkdf` + `sha2`，密码学不手写。
 
@@ -203,13 +203,12 @@ DB  侧用途串："encryptable-rust/db-ecb/v1"
 | 主密钥 vs 用途子密钥 | 子密钥（HKDF-SHA256） | DB 侧 ECB 对任意块给出 `E_K(块)`，是加密预言机；与 GCM 共用主密钥会同时拆掉机密性与完整性（NIST SP 800-57：GCM 密钥必须专用） |
 | 格式换代 vs 原地改语义 | 新版本字节 `0x03`/`0x04` + 双读 | 升级不动旧密文，写新读旧；`rotate_to_current_key()` 逐步搬迁后才退役旧格式 |
 | 确定性 vs 语义安全 | 只在 DB 侧确定性 | 应用侧保持随机 nonce 的语义安全；确定性是「按原值查询」的入场费，只在必须的列上付 |
-| 二进制信封 vs 文本信封 | 二进制 | PHP 版走 `settype()`，`integer:"abc"` 会静默变 `0`；二进制信封类型对不上就直接报错 |
-| GCM tag vs 手工 HMAC | GCM tag | PHP 在 DB 侧密文前压了 32 字节 HMAC，只为让 SQL 用 `SUBSTRING(..., 33)` 剥掉它；DB 侧从不校验，这里删掉，位置让给版本字节，SQL 只需 `SUBSTRING(..., 2)` |
+| 二进制信封 vs 文本信封 | 二进制 | 文本信封会把 `integer:"abc"` 静默变 `0`；二进制信封类型对不上就直接报错 |
+| GCM tag vs 手工 HMAC | GCM tag | 给 DB 侧密文压 32 字节 HMAC 前缀，只为让 SQL 用 `SUBSTRING(..., 33)` 剥掉它 —— 而 DB 侧从不校验，纯属占位；那 32 字节让给版本字节，SQL 只需 `SUBSTRING(..., 2)` |
 | 手写 ECB vs 引 `ecb` crate | 手写 | `ecb` 0.2 走 cipher 0.5，与 `aes-gcm` 0.10 的 cipher 0.4 不兼容，引进来会拖入第二套 AES 栈 |
 | 严格解密 vs 宽松回退 | 严格 | 宽松回退是明文被悄悄写进库的主要途径；宽松版降级成显式的 `decrypt_or_original` |
 | 密钥走 hex vs 走带引号字符串 | hex | SQL 片段里因此不含任何 `'`，转义漏一个字符导致注入的可能性也就不存在了 —— 片段里只剩 `'UTF8'` / `'base64'` / `'aes-ecb'` 三个固定常量 |
-| 与 PHP 字节级互通 | 不做 | 信封重新设计（去手工 HMAC、去 `crypt:` 脏位、去非 AEAD 分支）；已有列必须在应用侧重加密迁移 |
-| `ENCRYPTION_PREVIOUS_KEYS` 收 JSON 数组 | 拒绝 | PHP 是照单全收的；`["k1","k2"]` 按逗号硬拆会得到两把**错的**密钥，而错密钥在密钥环里静默失效 —— 解密跳过它继续试，最后只报一句「全都失败」，没人看得出真因是配置格式。宁可在读配置时就炸 |
+| `ENCRYPTION_PREVIOUS_KEYS` 收 JSON 数组 | 拒绝 | `["k1","k2"]` 按逗号硬拆会得到两把**错的**密钥，而错密钥在密钥环里静默失效 —— 解密跳过它继续试，最后只报一句「全都失败」，没人看得出真因是配置格式。宁可在读配置时就炸 |
 
 ---
 
@@ -284,7 +283,7 @@ DB 侧不带类型信封是刻意的：SQL 要看到**逐字节的原值**，套
 | 来源 | 入口 | 说明 |
 |------|------|------|
 | 代码 | `ArrayConfig::new(key)` | `.with_cipher()` / `.with_previous_keys()` / `.with_db_driver()` |
-| 环境 | `EnvConfig::from_env()` | `ENCRYPTION_KEY` / `ENCRYPTION_CIPHER` / `ENCRYPTION_PREVIOUS_KEYS` / `ENCRYPTION_DB_DRIVER`，变量名与 PHP 版逐字一致，运维的部署脚本可以照搬 |
+| 环境 | `EnvConfig::from_env()` | `ENCRYPTION_KEY` / `ENCRYPTION_CIPHER` / `ENCRYPTION_PREVIOUS_KEYS` / `ENCRYPTION_DB_DRIVER`，变量名固定为 `ENCRYPTION_*` 这一套，部署脚本直接沿用 |
 | 测试 | `EnvConfig::from_env_with(\|k\| ...)` | 注入取值函数，不碰进程环境 —— Rust 2024 里 `set_var` 是 `unsafe`，且与并发读环境变量的线程存在数据竞争 |
 
 密钥接受的写法：恰好是密码要求长度的字面量、长度恰好为密码要求**两倍**的 hex 字符串（256 位密码 64 字符、128 位 32 字符）、或 `base64:` 前缀。三种写法等价，`encryptable keygen` 会打出其中两种可用写法（hex 与 `base64:` 前缀）—— 裸 base64 不能用，44 个字符按字面量算是 44 字节，长度校验会拒绝它。
@@ -411,15 +410,15 @@ MySQL 的 `block_encryption_mode` 会话变量默认是 `aes-128-ecb`，而 `AES
 SET block_encryption_mode = 'aes-256-ecb';
 ```
 
-否则 MySQL 会把 32 字节密钥静默 XOR-fold 成它以为的 16 字节，**返回 NULL 而不报错** —— 你会得到「查询能跑、结果为空」这种最难查的现象。这是**原 PHP 项目里潜藏的缺陷**：Rust 版没有继承（密钥长度在构造时就按密码定死），但数据库那一侧的默认值不归本库管，只能在这里点明。
+否则 MySQL 会把 32 字节密钥静默 XOR-fold 成它以为的 16 字节，**返回 NULL 而不报错** —— 你会得到「查询能跑、结果为空」这种最难查的现象。本库挡不住它：密钥长度在构造时就按密码定死，但 `AES_DECRYPT` 用哪个模式是数据库的会话变量说了算，只能在这里点明。
 
 ### PG 与 MySQL 的出错行为不同
 
 `convert_from` 遇到非 UTF-8 字节会**直接让整条查询报错中止**；MySQL 的 `CONVERT(... USING 'UTF8')` 则返回 NULL。同一个原因（比如密钥配错了），在两边表现为「查询炸了」与「结果全是 NULL」两种现象。
 
-### 不做 PHP 字节级互通
+### 载荷格式是本库私有的
 
-这是**刻意**的，不是「暂时没做」：信封重新设计了（去掉手工 HMAC、去掉 `crypt:` 脏位、去掉非 AEAD 分支）。PHP 写的密文 Rust 读不了，反之亦然。已有列必须在应用侧重新加密迁移。
+这是**刻意**的，不是「暂时没做」：信封完全由本库定义 —— 密文里不压手工 HMAC（DB 侧从不校验它），也不留非 AEAD 分支。因此本库只认自己写出的密文：**非本库格式一律读不了**。列里若已有那样的数据，必须在应用侧重新加密迁移。
 
 ### `is_encrypted` 是廉价形状判定，会有假阳性
 
@@ -427,7 +426,7 @@ SET block_encryption_mode = 'aes-256-ecb';
 
 同一位面的两道**误拒**闸门也各有上限：`DbEncrypter::encrypt` 会拒绝「长度 ≥ 40 且形状像应用侧载荷」的输入 —— 短于 40 字符的 `AQ…` 类业务码不再误伤（那是曾经的一个硬缺陷），但足够长又恰好吻合的仍会被拦，绕过口是 `seal()`。应用侧的 `encrypt()` 反方向不做拦截（见「密钥分离」上一节）。
 
-顺带一提：`encrypt()` 内部**没有**用形状判定来决定「要不要再加密」—— 它是真的试解一次，正是为了避开 PHP 版踩过的这个坑（看起来像密文的明文被直接存库，从此解不开）。
+顺带一提：`encrypt()` 内部**没有**用形状判定来决定「要不要再加密」—— 它是真的试解一次，正是为了避开「看起来像密文的明文被直接存库、从此解不开」这个坑。
 
 ### DB 路径忽略 `previous_keys`
 
@@ -551,7 +550,7 @@ app.rotate_to_current_key(&c)?;           // 轮换：读旧密钥、写新密�
 app.cipher_name(); app.ring_len();
 app.decrypt_or_original("plain");         // 宽松版，显式选择
 
-// 防密文跨行/跨列移植：上下文进 AAD，解的时候必须对得上
+// 防密文跨行/跨列转移：上下文进 AAD，解的时候必须对得上
 let sealed = app.seal_with_context("users/42.phone", "13800138000")?;
 app.decrypt_text_with_context("users/42.phone", &sealed)?;
 app.decrypt(&sealed).is_err();            // 不带上下文解不开 —— 这是特性
@@ -644,7 +643,7 @@ ENCRYPTION_TEST_MYSQL=mysql://user:pass@localhost/db cargo test --test db_sql --
 正确性锚点有两个：
 
 - **金标量：与独立实现逐字节对齐。** DB 路径的 PKCS#7 + ECB 是手写的，`src/encrypter/db/tests.rs` 里两组金标量把它钉死：当前格式（`0x04`，HKDF 子密钥）由 Python `cryptography` 独立复算、再用 `openssl enc -aes-256-ecb -K <子密钥> -nosalt` 交叉验证；1.2.x 的 `0x02`（主密钥直用）向量转为**双读回归锚** —— 只断言解密，保证旧密文照旧解得开。这是「数据库能不能读懂我们写的字节」唯一能在 CI 里验证的代理 —— 手写补位少补一个块、字节序错一位，这条测试都会红。
-- **性质：`tests/invariants.rs`。** 本 crate 放弃了与 PHP 的字节级互通，也就没有现成的跨语言向量可对齐；取而代之的是一组不变量：往返恒等、篡改必被拒、错误密钥必被拒、随机 nonce 不重复、DB 路径确定性、两种载荷互不通用。语料用手写 LCG 生成而不引 `proptest` / `quickcheck` —— 确定性、可复现、零依赖。
+- **性质：`tests/invariants.rs`。** 这一层钉的不是字节而是行为 —— 一组不变量：往返恒等、篡改必被拒、错误密钥必被拒、随机 nonce 不重复、DB 路径确定性、两种载荷互不通用。语料用手写 LCG 生成而不引 `proptest` / `quickcheck` —— 确定性、可复现、零依赖。
 
 整条轮换迁移路径（换主密钥 → 旧密钥进环 → 批量搬运 → 摘除）在 `tests/rotation.rs`。
 
@@ -653,14 +652,6 @@ ENCRYPTION_TEST_MYSQL=mysql://user:pass@localhost/db cargo test --test db_sql --
 ```bash
 cargo run --example quickstart
 ```
-
----
-
-## 参考原项目
-
-Rust 移植自 PHP 包 **erikwang2013/encryptable**：<https://github.com/erikwang2013/encryptable>。
-
-两边的**密文不互通**（信封重新设计过，见「已知上限」），但**配置可以照抄** —— `ENCRYPTION_*` 变量名、密码名（`aes-256-gcm` / `aes-256-ecb`）、列名写法都一致，运维的部署脚本不用改。
 
 ---
 

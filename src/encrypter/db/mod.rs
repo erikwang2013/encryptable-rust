@@ -23,11 +23,11 @@
 //! 直接喂给它（完整论证见 crate 文档「两条路径」一节）。当前格式（`0x04`）用的是
 //! HKDF 派生的 **DB 侧子密钥**；`0x02` 旧格式保留只读，新写入不再产生。
 //!
-//! # 与 PHP 版的差异
+//! # 密文前不放 HMAC 前缀
 //!
-//! PHP 在密文前面压了 32 字节 HMAC，好让 SQL 用 `SUBSTRING(..., 33)` 剥掉它。
-//! 那个 HMAC 没有任何安全作用（DB 侧从不校验它，能加密的人自然也能算出它），
-//! 这里删掉，位置让给版本字节。于是 SQL 只需 `SUBSTRING(..., 2)`。
+//! 在密文前面压一段 HMAC 好让 SQL 用 `SUBSTRING` 剥掉，看起来像认证，其实对这条
+//! 路径没有任何安全作用（数据库从不校验它，能加密的人自然也算得出）。于是不放，
+//! 那个位置让给版本字节：SQL 只需 `SUBSTRING(..., 2)`。
 
 use aes::cipher::{BlockDecrypt, BlockEncrypt, KeyInit};
 use aes::{Aes128, Aes256};
@@ -488,7 +488,7 @@ fn validate_column(column: &str) -> Result<()> {
     }
 
     // 点号必须夹在两段之间：`users.phone` 合法，`a.b.` / `a..b` 不是合法标识符。
-    // PHP 的正则 `^[A-Za-z_][A-Za-z0-9_.]*$` 是放行后两者的，这里收紧 ——
+    // 常见的 `^[A-Za-z_][A-Za-z0-9_.]*$` 写法会放行后两者，这里收紧 ——
     // 放行它们没有任何好处，而收紧不可能误伤真实的列名。
     if column.split('.').any(str::is_empty) {
         return Err(bad());

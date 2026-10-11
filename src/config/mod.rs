@@ -2,10 +2,9 @@
 
 //! 配置来源。
 //!
-//! Rust 里没有 PSR-11 容器，也没有 `config()` / `app()` 这种全局助手，所以
-//! PHP 版的「容器 → 回调 → 数组 → 环境变量」四级回退在 Rust 侧塌缩成一件事：
-//! 你要么直接构造一个配置，要么用 [`EnvConfig`]。加密器在构造时就把它定下来，
-//! 之后不再解析。
+//! Rust 里没有全局容器，也没有 `config()` / `app()` 这类随处可用的助手，于是
+//! 配置来源塌缩成一件事：你要么直接构造一个配置，要么用 [`EnvConfig`]。加密器
+//! 在构造时就把它定下来，之后不再解析。
 
 mod array;
 mod env;
@@ -26,10 +25,9 @@ pub enum DbDriver {
 impl DbDriver {
     /// 从驱动名推断方言。
     ///
-    /// 认 `pgsql` / `postgres` / `postgresql` 三种写法（PHP 版的
-    /// `EnvDbDriverDetector` 认的也是这三个），其余一律按 MySQL 处理 ——
-    /// 与 PHP 版一致：认不出来时取默认值而不是报错，因为方言错了会立刻在
-    /// 数据库上炸，而配置阶段报错会连 MySQL 都跑不起来。
+    /// 认 `pgsql` / `postgres` / `postgresql` 三种写法，其余一律按 MySQL 处理 ——
+    /// 认不出来时取默认值而不是报错：方言错了会立刻在数据库上炸，
+    /// 而配置阶段报错会连 MySQL 都跑不起来。
     pub fn from_name(name: &str) -> Self {
         match name.trim().to_ascii_lowercase().as_str() {
             "pgsql" | "postgres" | "postgresql" => Self::Postgres,
@@ -51,7 +49,7 @@ impl DbDriver {
 /// }
 /// ```
 pub trait EncryptableConfig: Send + Sync {
-    /// 默认密码（与 PHP 版一致）。单一来源：实现方与文档都引用它。
+    /// 默认密码。单一来源：实现方与文档都引用它。
     const DEFAULT_CIPHER: &'static str = "aes-256-gcm";
 
     /// 主密钥。新密文一律用它产生。
