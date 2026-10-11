@@ -51,17 +51,20 @@ impl DbDriver {
 /// }
 /// ```
 pub trait EncryptableConfig: Send + Sync {
+    /// 默认密码（与 PHP 版一致）。单一来源：实现方与文档都引用它。
+    const DEFAULT_CIPHER: &'static str = "aes-256-gcm";
+
     /// 主密钥。新密文一律用它产生。
     ///
     /// 允许 `base64:` 前缀，便于存放二进制密钥。
     fn key(&self) -> Option<&str>;
 
-    /// 密码。默认 `aes-256-gcm`。
+    /// 密码。默认 [`DEFAULT_CIPHER`](Self::DEFAULT_CIPHER)。
     ///
     /// **密钥环上的每一把钥匙都必须配得上这个密码** —— 环里存的是裸密钥字节，
     /// 不含各自的密码信息。
     fn cipher(&self) -> &str {
-        "aes-256-gcm"
+        Self::DEFAULT_CIPHER
     }
 
     /// 退役密钥，**只用于解密**。

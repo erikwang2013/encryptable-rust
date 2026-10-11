@@ -14,7 +14,10 @@ use crate::error::{Error, Result};
 ///
 /// 这些名字与 PHP 版 `openssl_*` 接受的名字逐字一致 —— 配置在两个生态之间
 /// 可以照抄，虽然**密文**不互通（Rust 版用了自己的信封）。
+///
+/// `#[non_exhaustive]`：白名单将来可能扩容，**下游的 `match` 请带 `_` 分支**。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Cipher {
     /// AES-256-GCM，带认证，推荐默认。
     Aes256Gcm,

@@ -4,7 +4,7 @@
 //!
 //! 手动解析参数而不引 `clap`：命令只有八个，而 `clap` 会比本 crate 其余全部
 //! 依赖加起来还重。密钥一律从**环境变量**读，不从 argv 读 —— argv 会通过
-//! `ps` 和 shell 历史泄漏。
+//! `ps` 和 shell 历史泄漏。同理，涉及明文/PII 的参数建议用管道传（见 `--help`）。
 
 use std::io::Read as _;
 use std::process::ExitCode;
@@ -35,17 +35,20 @@ DB 侧（AES-256-ECB，确定性，可被 SQL 解密）：
 
 选项：
   --driver mysql|pgsql      sql 命令的方言（默认取 ENCRYPTION_DB_DRIVER）
-  --raw                     不解码输入，直接当成字面参数
   --help, -h                显示本说明
   --version, -V             显示版本与项目宠物
 
 环境变量：
-  ENCRYPTION_KEY            主密钥（32 字节字面量、64 位 hex，或 base64: 前缀）
+  ENCRYPTION_KEY            主密钥（字面量、hex（256 位密码 64 字符 /
+                            128 位密码 32 字符），或 base64: 前缀）
   ENCRYPTION_CIPHER         默认 aes-256-gcm
   ENCRYPTION_PREVIOUS_KEYS  退役密钥，逗号分隔
   ENCRYPTION_DB_DRIVER      默认 mysql
 
 退出码：0 成功 · 1 用法错误 · 2 配置或密码学错误
+
+提示：明文/PII 用管道传更安全（`printf %s 13800138000 | encryptable encrypt`）——
+      argv 会出现在 ps 与 shell 历史里。
 ";
 
 /// 用法错误。
@@ -53,7 +56,8 @@ const EXIT_USAGE: u8 = 1;
 /// 配置或密码学错误。
 const EXIT_CRYPTO: u8 = 2;
 
-/// 打印用法，并带上项目宠物 —— 与 PHP 版安装时的提示一个用意。
+/// 打印用法，并带上项目宠物 —— 与 PHP 版安装时的提示一个用意。显式的
+/// `--help` 走这里（stdout、退出码 0）。
 fn print_usage() {
     println!("{}", encryptable::pet::ASCII);
     println!();
@@ -77,13 +81,17 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
-    if args.is_empty() || args.iter().any(|a| a == "--help" || a == "-h") {
+    // 无参数是**用法错误**：说明走 stderr、退出码 1（stdout 留给正常输出，
+    // 免得 `encryptable > 密文.txt` 这种管道里混进一份说明书）。
+    if args.is_empty() {
+        eprint_pet();
+        eprint!("{USAGE}");
+        return ExitCode::from(EXIT_USAGE);
+    }
+
+    if args.iter().any(|a| a == "--help" || a == "-h") {
         print_usage();
-        return if args.is_empty() {
-            ExitCode::from(EXIT_USAGE)
-        } else {
-            ExitCode::SUCCESS
-        };
+        return ExitCode::SUCCESS;
     }
 
     match run(&args) {
@@ -139,6 +147,18 @@ fn config() -> Result<EnvConfig, CliError> {
     Ok(config)
 }
 
+/// `--driver` 的取值。与 `DbDriver::from_name` 的宽松回退不同，这里不认识就
+/// 报用法错误 —— 命令行是交互场景，打错字不该被静默吞成 MySQL。
+fn parse_driver_flag(value: &str) -> Result<DbDriver, CliError> {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "mysql" | "mariadb" => Ok(DbDriver::Mysql),
+        "pgsql" | "postgres" | "postgresql" => Ok(DbDriver::Postgres),
+        other => Err(CliError::Usage(format!(
+            "不认识的方言 [{other}]（mysql 或 pgsql）"
+        ))),
+    }
+}
+
 fn run(args: &[String]) -> Result<(), CliError> {
     let (command, rest) = args.split_first().expect("调用方已确保非空");
 
@@ -151,9 +171,9 @@ fn run(args: &[String]) -> Result<(), CliError> {
         return keygen();
     }
 
-    // 解析 --driver / --raw，其余是位置参数
+    // 解析 --driver，其余是位置参数
     let mut driver: Option<DbDriver> = None;
-    let mut positional: Vec<&str> = Vec::new();
+    let mut positional: Vec<String> = Vec::new();
     let mut iter = rest.iter();
     while let Some(arg) = iter.next() {
         match arg.as_str() {
@@ -161,14 +181,20 @@ fn run(args: &[String]) -> Result<(), CliError> {
                 let value = iter
                     .next()
                     .ok_or_else(|| CliError::Usage("--driver 后面要跟一个方言名".into()))?;
-                driver = Some(DbDriver::from_name(value));
+                driver = Some(parse_driver_flag(value)?);
             }
-            "--raw" => {}
             other if other.starts_with("--") => {
                 return Err(CliError::Usage(format!("不认识的选项 {other}")));
             }
-            other => positional.push(other),
+            other => positional.push(other.to_owned()),
         }
+    }
+
+    // --driver 只服务 sql —— 别的命令上带着它一定是敲错了，别静默忽略
+    if driver.is_some() && command != "sql" {
+        return Err(CliError::Usage(
+            "--driver 只对 sql 命令有意义（其余命令的方言来自配置）".into(),
+        ));
     }
 
     let config = config()?;
@@ -180,32 +206,32 @@ fn run(args: &[String]) -> Result<(), CliError> {
         }
         "decrypt" => {
             let value = operand(&positional, "decrypt")?;
-            println!("{}", AeadEncrypter::new(&config)?.decrypt_text(value)?);
+            println!("{}", AeadEncrypter::new(&config)?.decrypt_text(&value)?);
         }
         "rotate" => {
             let value = operand(&positional, "rotate")?;
             println!(
                 "{}",
-                AeadEncrypter::new(&config)?.rotate_to_current_key(value)?
+                AeadEncrypter::new(&config)?.rotate_to_current_key(&value)?
             );
         }
         "db-encrypt" => {
             let value = operand(&positional, "db-encrypt")?;
-            println!("{}", db_config(&config)?.encrypt(value)?);
+            println!("{}", db_config(&config)?.encrypt(&value)?);
         }
         "db-decrypt" => {
             let value = operand(&positional, "db-decrypt")?;
-            println!("{}", db_config(&config)?.decrypt(value)?);
+            println!("{}", db_config(&config)?.decrypt(&value)?);
         }
         "sql" => {
             let column = operand(&positional, "sql")?;
             let encrypter = db_config(&config)?;
             let driver = driver.unwrap_or_else(|| encrypter.driver());
             eprintln!(
-                "注意：该表达式会把主密钥嵌入 SQL 文本，因而会进入慢查询日志与\n\
-                 pg_stat_statements。过滤条件请改用 `db-encrypt` 的结果做参数绑定。"
+                "注意：该表达式会把密钥（迁移期为两代）嵌入 SQL 文本，因而会进入\n\
+                 慢查询日志与 pg_stat_statements。过滤条件请改用 `db-encrypt` 的结果做参数绑定。"
             );
-            println!("{}", encrypter.decrypt_expr(column, driver)?);
+            println!("{}", encrypter.decrypt_expr(&column, driver)?);
         }
         other => return Err(CliError::Usage(format!("不认识命令 {other}"))),
     }
@@ -228,9 +254,9 @@ fn db_config(config: &EnvConfig) -> Result<DbEncrypter, CliError> {
 }
 
 /// 取位置参数；没有则回退到读 stdin，便于管道使用。
-fn operand<'a>(positional: &[&'a str], command: &str) -> Result<&'a str, CliError> {
+fn operand(positional: &[String], command: &str) -> Result<String, CliError> {
     if let Some(v) = positional.first() {
-        return Ok(v);
+        return Ok(v.clone());
     }
 
     // stdin 只有在不是终端时才读，否则会静默挂住
@@ -245,10 +271,11 @@ fn operand<'a>(positional: &[&'a str], command: &str) -> Result<&'a str, CliErro
         .read_to_string(&mut buf)
         .map_err(|e| CliError::Usage(format!("读 stdin 失败：{e}")))?;
 
-    // 借用问题：这里必须泄漏成 'static，量极小且进程随即结束
-    Ok(Box::leak(
-        buf.trim_end_matches('\n').to_owned().into_boxed_str(),
-    ))
+    // 管道输入常带尾随换行（`echo` 还会附赠 `\r`）。密文是 base64、明文由调用方
+    // 决定，两者都不以有意义的尾随空白结尾 —— 整段 trim_end 掉。
+    // （此前只 trim `\n`，Windows 风格管道留下的 `\r` 会让解密静默失败。）
+    buf.truncate(buf.trim_end().len());
+    Ok(buf)
 }
 
 /// 生成一把新密钥，同时给出可直接使用的写法。
@@ -261,11 +288,17 @@ fn keygen() -> Result<(), CliError> {
     use aes_gcm::aead::OsRng;
     use aes_gcm::{Aes256Gcm, KeyInit as _};
     use base64::Engine as _;
+    use std::fmt::Write as _;
 
     let key = Aes256Gcm::generate_key(&mut OsRng);
     let bytes = key.as_slice();
 
-    let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+    // 单次分配拼 hex（此前每个字节一次 format!，32 次分配）
+    let mut hex = String::with_capacity(64);
+    for b in bytes {
+        // 写进 String 不会失败，这里只是满足签名
+        let _ = write!(hex, "{b:02x}");
+    }
     let b64 = base64::engine::general_purpose::STANDARD.encode(bytes);
 
     debug_assert_eq!(bytes.len(), 32);

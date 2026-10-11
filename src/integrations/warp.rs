@@ -52,7 +52,9 @@ pub fn with_guard(guard: Guard) -> impl Filter<Extract = (Guard,), Error = Infal
 /// # }
 /// ```
 pub fn pet() -> impl Filter<Extract = (impl warp::Reply,), Error = warp::Rejection> + Clone {
-    warp::path("pet.svg").map(|| {
+    // `path::end()` 不能省：warp 的路径过滤器默认是前缀匹配，
+    // 少了它 `/pet.svg/anything` 也会命中（其余七个适配器都是精确路径）。
+    warp::path("pet.svg").and(warp::path::end()).map(|| {
         warp::reply::with_header(crate::pet::svg(), "content-type", crate::pet::CONTENT_TYPE)
     })
 }
@@ -127,5 +129,15 @@ mod tests {
     async fn pet_filter_does_not_answer_other_paths() {
         let res = warp::test::request().path("/other").reply(&pet()).await;
         assert_eq!(res.status(), 404);
+    }
+
+    /// 子路径也不吞：`path::end()` 钉住整条路径（其余七个适配器同为精确路径）。
+    #[tokio::test]
+    async fn pet_filter_rejects_subpaths() {
+        let res = warp::test::request()
+            .path("/pet.svg/extra")
+            .reply(&pet())
+            .await;
+        assert_eq!(res.status(), 404, "/pet.svg 的前缀不该匹配到子路径");
     }
 }

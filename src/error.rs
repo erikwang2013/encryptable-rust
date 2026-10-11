@@ -15,7 +15,12 @@ pub type Result<T> = std::result::Result<T, Error>;
 ///
 /// 对照 PHP 版的 6 个异常类，这里塌缩成一个枚举 —— `match` 能穷尽，
 /// 调用方不必为「该 catch 哪一个」翻文档。
+///
+/// `#[non_exhaustive]`：变体将来可能增加（比如新的格式诊断），**下游的
+/// `match` 请带 `_` 分支**。这是 1.3.0 特意收紧的：等到有下游之后再加，
+/// 代价只增不减。
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum Error {
     /// 没有配置密钥（PHP `MissingEncryptionKeyException`）。
     MissingKey,

@@ -71,6 +71,19 @@ pub fn ascii() -> &'static str {
     ASCII
 }
 
+/// 形象的数据 URI（常量形式）：编码一次，此后每次调用只是引用。
+///
+/// README 里的用法是把它塞进 `<img src>` —— 那是**每请求**路径，每次都重新
+/// 编码 4.7KB 的 SVG 是白做功（一次约 6.4KB 的分配加一次全量 base64）。
+pub static DATA_URI: std::sync::LazyLock<String> = std::sync::LazyLock::new(|| {
+    use base64::Engine as _;
+    const PREFIX: &str = "data:image/svg+xml;base64,";
+    let mut out = String::with_capacity(PREFIX.len() + SVG.len().div_ceil(3) * 4);
+    out.push_str(PREFIX);
+    base64::engine::general_purpose::STANDARD.encode_string(SVG, &mut out);
+    out
+});
+
 /// 形象的数据 URI，可直接塞进 HTML 的 `<img src>`。
 ///
 /// ```
@@ -97,13 +110,8 @@ pub fn ascii() -> &'static str {
 /// }
 /// # }
 /// ```
-pub fn data_uri() -> String {
-    use base64::Engine as _;
-    const PREFIX: &str = "data:image/svg+xml;base64,";
-    let mut out = String::with_capacity(PREFIX.len() + SVG.len().div_ceil(3) * 4);
-    out.push_str(PREFIX);
-    base64::engine::general_purpose::STANDARD.encode_string(SVG, &mut out);
-    out
+pub fn data_uri() -> &'static str {
+    &DATA_URI
 }
 
 #[cfg(test)]
@@ -187,6 +195,13 @@ mod tests {
         assert!(!uri.contains('\n'), "数据 URI 含换行");
         assert!(!uri.contains(' '), "数据 URI 含空格");
         assert!(uri.is_ascii(), "数据 URI 含非 ASCII 字符");
+    }
+
+    /// 编码只做一次：两次调用必须指向同一份缓冲（`LazyLock` 起作用了）。
+    #[test]
+    fn data_uri_is_encoded_once() {
+        assert!(std::ptr::eq(data_uri().as_ptr(), data_uri().as_ptr()));
+        assert_eq!(data_uri().len(), DATA_URI.len());
     }
 
     /// 容量估算不能算少（`with_capacity` 少了只是重新分配，但说明算式错了）。

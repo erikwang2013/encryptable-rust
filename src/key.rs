@@ -45,11 +45,15 @@ impl Key {
     ///
     /// 识别顺序（写死成这个顺序，不留歧义）：
     /// 1. `base64:` 前缀 —— 解出后续内容，非法 base64 直接报错而不是退回按字面处理；
-    /// 2. 恰好 64 个十六进制字符 —— 按 hex 解（32 字节）；
+    /// 2. 恰好是密码要求字节数的两倍个十六进制字符（256 位密码 64 字符、
+    ///    128 位密码 32 字符）—— 按 hex 解；
     /// 3. 其余按字面字节处理，长度必须正好等于密码要求。
     ///
     /// 第 2 条与 PHP 版不同（PHP 只认 `base64:` 和字面量）。加它是因为 SQL 片段
-    /// 要把密钥以 hex 嵌进去，让运维手上就能有一份同样的表示。
+    /// 要把密钥以 hex 嵌进去，让运维手上就能有一份同样的表示 —— 而且
+    /// [`Key::to_hex`] 的输出必须能**回喂**自己（这条不对称曾经存在：hex 分支
+    /// 写死 64 字符，AES-128 的 `to_hex()` 输出 32 字符，喂回来会被当成 32 字节
+    /// 字面量拒掉）。
     ///
     /// # Errors
     ///
@@ -72,7 +76,7 @@ impl Key {
             return Self::from_bytes(decoded, cipher);
         }
 
-        if raw.len() == 64 && raw.bytes().all(|b| b.is_ascii_hexdigit()) {
+        if raw.len() == cipher.key_len() * 2 && raw.bytes().all(|b| b.is_ascii_hexdigit()) {
             let decoded = (0..raw.len())
                 .step_by(2)
                 .map(|i| u8::from_str_radix(&raw[i..i + 2], 16))
@@ -229,6 +233,23 @@ mod tests {
         assert_eq!(k.to_hex().as_str(), hex);
     }
 
+    /// AES-128 的 hex 是 32 字符 —— `to_hex()` 的输出必须能回喂 `parse`。
+    #[test]
+    fn aes_128_hex_round_trips_through_to_hex() {
+        let hex = "000102030405060708090a0b0c0d0e0f";
+        let k = Key::parse(hex, Cipher::Aes128Gcm).unwrap();
+        assert_eq!(k.as_bytes()[0], 0x00);
+        assert_eq!(k.as_bytes()[15], 0x0f);
+        assert_eq!(k.to_hex().as_str(), hex);
+
+        // 同一串 32 字符喂给 256 位密码：按**字面量**处理，恰好 32 字节 ——
+        // 是合法密钥，但与上面的 hex 解释完全不同。这个歧义是文档化的：
+        // hex 只在「长度恰好是密码要求的两倍」时才生效。
+        let as_literal = Key::parse(hex, Cipher::Aes256Gcm).unwrap();
+        assert_eq!(as_literal.as_bytes(), hex.as_bytes());
+        assert_ne!(as_literal.as_bytes(), k.as_bytes());
+    }
+
     #[test]
     fn empty_key_is_missing_not_short() {
         assert_eq!(Key::parse("", Cipher::Aes256Gcm), Err(Error::MissingKey));
@@ -254,9 +275,13 @@ mod tests {
                 ..
             })
         ));
-        // 反过来，16 字节密码收 32 字节密钥同样拒绝
+        // 反过来，16 字节密码收 32 字节密钥同样拒绝 —— 用**非 hex** 的 32 字节串。
+        // （hex 形状的 32 字符现在会被 AES-128 按 hex 解成 16 字节，那是另一条
+        // 路径，见 aes_128_hex_round_trips_through_to_hex。）
+        let k32_literal = "0123456789abcdefghijklmnopqrstuv";
+        assert_eq!(k32_literal.len(), 32);
         assert!(matches!(
-            Key::parse(K32, Cipher::Aes128Gcm),
+            Key::parse(k32_literal, Cipher::Aes128Gcm),
             Err(Error::KeyLength {
                 expected: 16,
                 actual: 32,

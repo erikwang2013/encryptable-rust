@@ -6,6 +6,8 @@
 //! 变量也不会影响已经建好的加密器。这既是可预期的，也顺带避开了「读值读到一半
 //! 被别人改了」的竞态。
 
+use zeroize::Zeroizing;
+
 use super::{DbDriver, EncryptableConfig};
 use crate::support::previous_keys;
 
@@ -22,15 +24,40 @@ pub mod vars {
 }
 
 /// 由环境变量构造的配置。
-#[derive(Debug, Clone)]
+///
+/// 密钥用 `Zeroizing` 包裹、`Debug` 遮蔽 —— 与 `ArrayConfig` 同样的待遇。
+#[derive(Clone)]
 pub struct EnvConfig {
-    key: Option<String>,
+    key: Option<Zeroizing<String>>,
     cipher: String,
+    /// 与 [`ArrayConfig`](super::ArrayConfig) 同理：不裹 `Zeroizing`，
+    /// 免得把 `EncryptableConfig::previous_keys` 的 `&[String]` 签名带崩。
     previous_keys: Vec<String>,
     db_driver: DbDriver,
 }
 
+impl std::fmt::Debug for EnvConfig {
+    /// 手写以遮蔽密钥与退役密钥。
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let key = if self.key.is_some() {
+            "Some(<已遮蔽>)"
+        } else {
+            "None"
+        };
+        f.debug_struct("EnvConfig")
+            .field("key", &key)
+            .field("cipher", &self.cipher)
+            .field(
+                "previous_keys",
+                &format_args!("{} 把（已遮蔽）", self.previous_keys.len()),
+            )
+            .field("db_driver", &self.db_driver)
+            .finish()
+    }
+}
+
 impl Default for EnvConfig {
+    /// 等价于 [`EnvConfig::from_env`]，**包括它的 panic 行为**。
     fn default() -> Self {
         Self::from_env()
     }
@@ -38,11 +65,19 @@ impl Default for EnvConfig {
 
 impl EnvConfig {
     /// 读真实进程环境。
+    ///
+    /// # Panics
+    ///
+    /// `ENCRYPTION_PREVIOUS_KEYS` 写成 JSON 数组（`["k1","k2"]`）时 panic ——
+    /// 那正是 [`from_env_with`](Self::from_env_with) 唯一的失败路径，而这条便捷
+    /// 构造器的签名（`-> Self`）没法把错误交给调用方。报错消息会带上真实原因。
+    /// 不想冒险的调用点请用 [`from_env_with`](Self::from_env_with)，它是 `Result`。
+    ///
+    /// （2.0 计划把本方法也改成返回 `Result`，并顺带解决 `Default` 不该失败的问题。）
     pub fn from_env() -> Self {
-        // 真实环境读取不会失败：previous_keys 的 JSON 拒绝只对配错的人生效，
-        // 而这里没配就是空列表。
-        Self::from_env_with(|k| std::env::var(k).ok())
-            .expect("未设置 ENCRYPTION_PREVIOUS_KEYS 时不可能失败")
+        Self::from_env_with(|k| std::env::var(k).ok()).unwrap_or_else(|e| {
+            panic!("ENCRYPTION_PREVIOUS_KEYS 解析失败：{e}（详见 EnvConfig 文档）")
+        })
     }
 
     /// 用注入的取值函数构造。
@@ -67,7 +102,9 @@ impl EnvConfig {
     where
         F: Fn(&str) -> Option<String>,
     {
-        let key = get(vars::KEY).filter(|v| !v.trim().is_empty());
+        let key = get(vars::KEY)
+            .filter(|v| !v.trim().is_empty())
+            .map(Zeroizing::new);
 
         let cipher = get(vars::CIPHER)
             .filter(|v| !v.trim().is_empty())
@@ -93,7 +130,7 @@ impl EnvConfig {
 
 impl EncryptableConfig for EnvConfig {
     fn key(&self) -> Option<&str> {
-        self.key.as_deref()
+        self.key.as_ref().map(|k| k.as_str())
     }
 
     fn cipher(&self) -> &str {
@@ -192,5 +229,19 @@ mod tests {
             .unwrap()
             .insert(vars::KEY.to_owned(), "second".to_owned());
         assert_eq!(c.key(), Some("first"));
+    }
+
+    /// `Debug` 不该吐密钥与退役密钥。
+    #[test]
+    fn debug_never_leaks_key_material() {
+        let c = env(&[
+            (vars::KEY, "0123456789abcdef0123456789abcdef"),
+            (vars::PREVIOUS_KEYS, "old-old-old-old-old-old-old-old-"),
+        ])
+        .unwrap();
+        let rendered = format!("{c:?}");
+        assert!(!rendered.contains("0123456789abcdef"), "{rendered}");
+        assert!(!rendered.contains("old-old"), "{rendered}");
+        assert!(rendered.contains("已遮蔽"), "{rendered}");
     }
 }

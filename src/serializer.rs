@@ -30,7 +30,9 @@ mod tag {
 ///
 /// 只覆盖 PHP 版支持的同一组标量 —— 数组与结构体必须先由调用方自己编码
 /// （JSON、bincode 等）再当字符串放进来，而不是让信封去猜。
-#[derive(Debug, Clone, PartialEq)]
+///
+/// `Debug` 是手写的：`String` 载荷**不会**被打印出来（见 impl）。
+#[derive(Clone, PartialEq)]
 pub enum Value {
     /// 空值。注意：`Value::Null` 与「没有值」不同 —— 前者会被加密成密文。
     Null,
@@ -42,6 +44,39 @@ pub enum Value {
     Float(f64),
     /// 布尔。
     Bool(bool),
+}
+
+impl std::fmt::Debug for Value {
+    /// 遮蔽 `String` 载荷 —— `decrypt()` 的返回值是最容易被
+    /// `tracing::debug!(?v)` 随手记录的东西，而它是明文 PII。
+    /// 数字与布尔照常打印（它们通常不是秘密），字符串只显示字节数。
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Null => f.write_str("Null"),
+            Self::String(s) => write!(f, "String(<{} 字节，已遮蔽>)", s.len()),
+            Self::Int(i) => write!(f, "Int({i})"),
+            Self::Float(v) => write!(f, "Float({v})"),
+            Self::Bool(b) => write!(f, "Bool({b})"),
+        }
+    }
+}
+
+impl std::fmt::Display for Value {
+    /// 渲染成字符串。`Null` 渲染为**空串**（对齐 PHP 的 `(string)null`），
+    /// 数字与布尔按各自字面量。
+    ///
+    /// 主要给 [`decrypt_or_original`](crate::encrypter::AeadEncrypter::decrypt_or_original)
+    /// 用：解出来是 `Int(42)` 就该拿到 `"42"`，而不是类型名 —— 后者是静默的
+    /// 数据损坏。
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Null => Ok(()),
+            Self::String(s) => f.write_str(s),
+            Self::Int(i) => write!(f, "{i}"),
+            Self::Float(v) => write!(f, "{v}"),
+            Self::Bool(b) => write!(f, "{b}"),
+        }
+    }
 }
 
 impl Value {
@@ -278,5 +313,32 @@ mod tests {
             Value::decode(&[tag::STRING, 0xff, 0xfe]),
             Err(Error::Unserialize(_))
         ));
+    }
+
+    /// `Display` 渲染的是**值**，不是类型名 —— `decrypt_or_original` 靠它
+    /// 避免「解出来是 42 却给你一个 'int'」那种静默数据损坏。
+    #[test]
+    fn display_renders_values_not_type_names() {
+        assert_eq!(Value::Int(42).to_string(), "42");
+        assert_eq!(Value::Int(-1).to_string(), "-1");
+        assert_eq!(Value::Bool(true).to_string(), "true");
+        assert_eq!(Value::Bool(false).to_string(), "false");
+        assert_eq!(Value::Null.to_string(), "");
+        assert_eq!(Value::String("世界".into()).to_string(), "世界");
+        assert_eq!(Value::Float(-1.5).to_string(), "-1.5");
+    }
+
+    /// `Debug` 不能把明文字符串打进日志 —— 本 crate 其余密钥类类型都遮蔽了，
+    /// 唯独承载明文返回值的 `Value` 曾经是裸的。
+    #[test]
+    fn debug_masks_string_payloads() {
+        let v = Value::String("13800138000".into());
+        let rendered = format!("{v:?}");
+        assert!(!rendered.contains("13800138000"), "{rendered}");
+        assert!(rendered.contains("已遮蔽"), "{rendered}");
+
+        // 数字与布尔不是 PII，照常打印（排障时用得上）
+        assert_eq!(format!("{:?}", Value::Int(42)), "Int(42)");
+        assert_eq!(format!("{:?}", Value::Bool(true)), "Bool(true)");
     }
 }
