@@ -313,6 +313,54 @@ fn key_hex_round_trips() {
     let from_hex =
         DbEncrypter::new(&ArrayConfig::new(hex.to_string()).with_cipher("aes-256-ecb")).unwrap();
     assert_eq!(from_hex.decrypt(&payload).unwrap(), "hello");
+
+    // 子密钥是另一份材料：不等于主密钥 hex，也不该被当成主密钥再用一遍
+    let derived = e.derived_key_hex();
+    assert_ne!(derived.as_str(), hex.as_str());
+    assert_eq!(derived.len(), 64);
+    let from_derived =
+        DbEncrypter::new(&ArrayConfig::new(derived.to_string()).with_cipher("aes-256-ecb"))
+            .unwrap();
+    assert_ne!(from_derived.decrypt(&payload).unwrap_or_default(), "hello");
+}
+
+/// 并发下 nonce 唯一性：8 线程各自 seal 同一明文，密文必须零重复且全部可解。
+#[test]
+fn concurrent_seals_are_unique_and_recoverable() {
+    let e = std::sync::Arc::new(app());
+    let handles: Vec<_> = (0..8)
+        .map(|_| {
+            let e = e.clone();
+            std::thread::spawn(move || {
+                (0..200)
+                    .map(|_| e.seal("并发固定的明文").unwrap())
+                    .collect::<Vec<_>>()
+            })
+        })
+        .collect();
+
+    let mut seen = std::collections::HashSet::new();
+    for h in handles {
+        for c in h.join().unwrap() {
+            assert!(seen.insert(c.clone()), "并发下密文重复，nonce 可能没在随机");
+            assert_eq!(e.decrypt_text(&c).unwrap(), "并发固定的明文");
+        }
+    }
+    assert_eq!(seen.len(), 1600);
+}
+
+/// 大输入的截断防护：1 MiB 明文双向往返（既有语料上限只有 200 字节）。
+#[test]
+fn mebibyte_round_trips() {
+    let big = "a".repeat(1 << 20);
+
+    let a = app();
+    let c = a.seal(big.as_str()).unwrap();
+    assert_eq!(a.decrypt_text(&c).unwrap(), big);
+
+    let d = db();
+    let c = d.encrypt(&big).unwrap();
+    assert_eq!(d.decrypt(&c).unwrap(), big);
 }
 
 /// 两条路径的 SQL 片段在两种方言下都不该含密钥明文。

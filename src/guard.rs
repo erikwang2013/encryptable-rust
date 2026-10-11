@@ -79,9 +79,11 @@ impl Guard {
     /// 再挂上 DB 侧加密器。
     ///
     /// 单独传一份配置，因为 DB 侧要求确定性密码，与常驻的 `aes-256-gcm` 不同。
-    /// 密钥可以复用同一把（`aes-256-*` 的长度都是 32 字节），但密码必须显式写
-    /// 成 `aes-256-ecb` 或 `aes-128-ecb` —— 这里不做隐式替换，免得「为什么它
-    /// 用的是另一个密码」变成一个只有读源码才知道的事。
+    /// 主密钥**可以**与应用侧相同：两条路径各自经 HKDF 派生自己的子密钥
+    /// （DB 侧的 ECB 是一条 `E_K(·)` 预言机，主密钥绝不能直接喂给它 —— 理由见
+    /// crate 文档「两条路径」一节），所以「同一把主密钥配两遍」是安全的。密码仍需
+    /// 显式写成 `aes-256-ecb` 或 `aes-128-ecb` —— 这里不做隐式替换，免得
+    /// 「为什么它用的是另一个密码」变成一个只有读源码才知道的事。
     ///
     /// # Errors
     ///
@@ -165,6 +167,48 @@ impl Guard {
         self.aead.rotate_to_current_key(payload)
     }
 
+    /// 绑定上下文加密（转发）。上下文进 AAD，把密文钉死在「哪一行/哪一列」上，
+    /// 见 [`AeadEncrypter::seal_with_context`](crate::encrypter::AeadEncrypter::seal_with_context)。
+    ///
+    /// # Errors
+    ///
+    /// 见 [`AeadEncrypter::seal_with_context`](crate::encrypter::AeadEncrypter::seal_with_context)。
+    pub fn seal_with_context(&self, context: &str, value: impl Into<Value>) -> Result<String> {
+        self.aead.seal_with_context(context, value)
+    }
+
+    /// 解密一个绑定了上下文的载荷（转发）。
+    ///
+    /// # Errors
+    ///
+    /// 见 [`AeadEncrypter::decrypt_with_context`](crate::encrypter::AeadEncrypter::decrypt_with_context)。
+    pub fn decrypt_with_context(&self, context: &str, payload: &str) -> Result<Value> {
+        self.aead.decrypt_with_context(context, payload)
+    }
+
+    /// 带上下文的解密并断言是字符串（转发）。
+    ///
+    /// # Errors
+    ///
+    /// 见 [`AeadEncrypter::decrypt_text_with_context`](crate::encrypter::AeadEncrypter::decrypt_text_with_context)。
+    pub fn decrypt_text_with_context(&self, context: &str, payload: &str) -> Result<String> {
+        self.aead.decrypt_text_with_context(context, payload)
+    }
+
+    /// 带上下文的轮换（转发）：读绑定 `context` 的密文、写回仍绑定的密文。
+    ///
+    /// # Errors
+    ///
+    /// 见 [`AeadEncrypter::rotate_to_current_key_with_context`](crate::encrypter::AeadEncrypter::rotate_to_current_key_with_context)。
+    pub fn rotate_to_current_key_with_context(
+        &self,
+        context: &str,
+        payload: &str,
+    ) -> Result<String> {
+        self.aead
+            .rotate_to_current_key_with_context(context, payload)
+    }
+
     /// 环上钥匙数量（含主密钥）。
     pub fn ring_len(&self) -> usize {
         self.aead.ring_len()
@@ -224,7 +268,7 @@ mod tests {
         assert_eq!(g.db().unwrap().cipher_name(), "aes-256-ecb");
     }
 
-    /// DB 侧密钥可以与主密钥相同 —— `aes-256-*` 都是 32 字节。
+    /// DB 侧密钥可以与主密钥相同 —— 两路各自 HKDF 派生子密钥，共用主密钥是安全的。
     #[test]
     fn both_sides_share_one_key_but_not_one_cipher() {
         let g = Guard::new(&ArrayConfig::new(K32))
@@ -299,6 +343,29 @@ mod tests {
         let c = g.encrypt("数据").unwrap();
         let moved = g.rotate_to_current_key(&c).unwrap();
         assert_eq!(g.decrypt_text(&moved).unwrap(), "数据");
+    }
+
+    /// 上下文绑定三个方法也要转发到位 —— 处理器里拿到的就是这套。
+    #[test]
+    fn context_methods_forward() {
+        let g = guard();
+        let sealed = g.seal_with_context("users/1.phone", "13800138000").unwrap();
+        assert_eq!(
+            g.decrypt_text_with_context("users/1.phone", &sealed)
+                .unwrap(),
+            "13800138000"
+        );
+        assert!(g.decrypt_with_context("users/2.phone", &sealed).is_err());
+        assert!(g.decrypt(&sealed).is_err());
+
+        let moved = g
+            .rotate_to_current_key_with_context("users/1.phone", &sealed)
+            .unwrap();
+        assert_eq!(
+            g.decrypt_text_with_context("users/1.phone", &moved)
+                .unwrap(),
+            "13800138000"
+        );
     }
 
     #[test]

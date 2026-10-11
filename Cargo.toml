@@ -2,7 +2,7 @@
 
 [package]
 name = "encryptable-rust"
-version = "1.2.1"
+version = "1.3.0"
 edition = "2024"
 rust-version = "1.88"
 description = "为敏感字段提供「可检索的匿名化 / 加密」能力：写入数据库前加密，读出时解密，并可生成与 MySQL / PostgreSQL 兼容的 SQL 片段"
@@ -12,6 +12,11 @@ authors = ["erik <erik@erik.xyz>"]
 keywords = ["encryption", "aes-gcm", "database", "key-rotation", "pii"]
 categories = ["cryptography", "database"]
 readme = "README.md"
+
+# docs.rs 默认只按默认 feature（空集）构建，八个框架集成模块与 serde API
+# 在线上文档里会整个消失。全开构建 + 本地 `-D warnings` 验证过干净。
+[package.metadata.docs.rs]
+all-features = true
 
 # 随包只发「读代码 / 用库」要用的东西。`docs/pet.svg` 绝不能排 —— src/pet.rs 用
 # include_str! 内联它，排掉就编译不过（cargo package 会当场报错，不会静默漏发）。
@@ -46,6 +51,11 @@ aes = { version = "0.8", features = ["zeroize"] }
 # feature 只是白编译。
 zeroize = "1"
 base64 = "0.22"
+# 密钥分离（HKDF-SHA256）：DB 侧的确定性 ECB 是一条 E_K(·) 加密预言机，与 GCM 同住
+# 一把主密钥会同时拆掉机密性与完整性（完整论证见 src/support/subkeys.rs）。
+# 两个都是纯 Rust 小依赖，与 security-rust 的极简取向一致。
+hkdf = "0.12"
+sha2 = "0.10"
 
 serde = { version = "1", features = ["derive"], optional = true }
 serde_json = { version = "1", optional = true }

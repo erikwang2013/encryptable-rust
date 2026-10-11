@@ -10,8 +10,11 @@ use base64::Engine as _;
 use encryptable::config::{ArrayConfig, DbDriver};
 use encryptable::{DbEncrypter, Error};
 
-/// 与 src/encrypter/db.rs 的金标量同一把密钥。
+/// 与 src/encrypter/db/tests.rs 的金标量同一把密钥。
 const KEY: &str = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+
+/// `KEY` 经 HKDF-SHA256（info = "encryptable-rust/db-ecb/v1"）派生的 DB 侧子密钥。
+const DERIVED: &str = "a17d9e28145951c875300f13a955288579cf74000125e8eba07772a507db8f94";
 
 fn enc(driver: DbDriver) -> DbEncrypter {
     DbEncrypter::new(
@@ -22,17 +25,19 @@ fn enc(driver: DbDriver) -> DbEncrypter {
     .unwrap()
 }
 
-/// 片段全文逐字符钉死 —— 两种方言各一条。
+/// 片段全文逐字符钉死 —— 两种方言各一条（CASE 按格式字节分派两代密钥：
+/// `0x04` 当前格式用子密钥，`0x02` 旧数据用主密钥原样）。
 #[test]
 fn fragment_text_is_pinned() {
-    let hex = "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f";
+    let current = DERIVED;
+    let legacy = KEY;
 
     assert_eq!(
         enc(DbDriver::Mysql)
             .decrypt_expr("phone", DbDriver::Mysql)
             .unwrap(),
         format!(
-            "CONVERT( AES_DECRYPT( SUBSTRING( FROM_BASE64(phone), 2 ), UNHEX('{hex}') ) USING 'UTF8' )"
+            "CASE SUBSTRING( FROM_BASE64(phone), 1, 1 ) WHEN 0x04 THEN CONVERT( AES_DECRYPT( SUBSTRING( FROM_BASE64(phone), 2 ), UNHEX('{current}') ) USING 'UTF8' ) WHEN 0x02 THEN CONVERT( AES_DECRYPT( SUBSTRING( FROM_BASE64(phone), 2 ), UNHEX('{legacy}') ) USING 'UTF8' ) ELSE NULL END"
         )
     );
 
@@ -41,7 +46,7 @@ fn fragment_text_is_pinned() {
             .decrypt_expr("phone", DbDriver::Postgres)
             .unwrap(),
         format!(
-            "convert_from( decrypt( substring( decode(phone, 'base64') from 2 ), '\\x{hex}'::bytea, 'aes-ecb' ), 'UTF8' )"
+            "CASE get_byte( decode(phone, 'base64'), 0 ) WHEN 4 THEN convert_from( decrypt( substring( decode(phone, 'base64') from 2 ), '\\x{current}'::bytea, 'aes-ecb' ), 'UTF8' ) WHEN 2 THEN convert_from( decrypt( substring( decode(phone, 'base64') from 2 ), '\\x{legacy}'::bytea, 'aes-ecb' ), 'UTF8' ) ELSE NULL END"
         )
     );
 }
@@ -60,9 +65,14 @@ fn fragment_never_contains_the_raw_key() {
     for driver in [DbDriver::Mysql, DbDriver::Postgres] {
         let sql = e.decrypt_expr("phone", driver).unwrap();
         assert!(!sql.contains(RAW), "{driver:?} 片段含密钥明文: {sql}");
-        // 但它的 hex 形式必须在（数据库要靠它解密）
-        let hex = e.key_hex();
-        assert!(sql.contains(hex.as_str()), "{driver:?} 片段里没有密钥");
+        // 但两代密钥的 hex 形式都必须在（数据库要靠它们解密）
+        let master = e.key_hex();
+        assert!(sql.contains(master.as_str()), "{driver:?} 片段里没有主密钥");
+        let derived = e.derived_key_hex();
+        assert!(
+            sql.contains(derived.as_str()),
+            "{driver:?} 片段里没有子密钥"
+        );
     }
 }
 
@@ -130,8 +140,10 @@ fn overlong_identifiers_are_rejected() {
 #[test]
 fn quotes_only_wrap_constants_and_hex() {
     let e = enc(DbDriver::Mysql);
-    let hex = e.key_hex();
-    let hex = hex.as_str();
+    let master = e.key_hex();
+    let master = master.as_str();
+    let derived = e.derived_key_hex();
+    let derived = derived.as_str();
 
     for driver in [DbDriver::Mysql, DbDriver::Postgres] {
         let sql = e.decrypt_expr("phone", driver).unwrap();
@@ -142,7 +154,8 @@ fn quotes_only_wrap_constants_and_hex() {
 
         for quoted in sql.split('\'').skip(1).step_by(2) {
             let bare = quoted.strip_prefix("\\x").unwrap_or(quoted);
-            let ok = matches!(bare, "UTF8" | "base64" | "aes-ecb") || bare == hex;
+            let ok =
+                matches!(bare, "UTF8" | "base64" | "aes-ecb") || bare == master || bare == derived;
             assert!(ok, "{driver:?} 里有意料之外的引号内容: {quoted:?}");
         }
     }
@@ -171,7 +184,7 @@ fn version_byte_is_the_first_byte() {
         let raw = base64::engine::general_purpose::STANDARD
             .decode(e.encrypt(plain).unwrap())
             .unwrap();
-        assert_eq!(raw[0], 0x02, "明文 {plain:?} 的版本字节不对");
+        assert_eq!(raw[0], 0x04, "明文 {plain:?} 的版本字节不对");
         assert_eq!((raw.len() - 1) % 16, 0, "去掉版本字节后应当正好是整块");
     }
 }
@@ -222,6 +235,37 @@ fn aes_128_ecb_is_supported() {
     assert_eq!(e.cipher_name(), "aes-128-ecb");
     assert_eq!(e.key_hex().len(), 32);
     assert_eq!(e.decrypt(&e.encrypt("hi").unwrap()).unwrap(), "hi");
+}
+
+/// DB 路径忽略 `previous_keys` —— README「已知上限」里的话，这里钉死它的两半：
+/// 解不了旧密钥写的数据；输出与不带 previous 的实例逐字节一致（没有隐式轮换）。
+/// 构造时会向 stderr 打一条警告，这里不拦（同一份配置喂两条路径是常见写法）。
+#[test]
+fn db_path_ignores_previous_keys() {
+    const OLD: &str = "old-old-old-old-old-old-old-old-";
+    const NEW: &str = "new-new-new-new-new-new-new-new-";
+
+    let old = DbEncrypter::new(&ArrayConfig::new(OLD).with_cipher("aes-256-ecb")).unwrap();
+    let payload = old.encrypt("13800138000").unwrap();
+
+    let with_prev = DbEncrypter::new(
+        &ArrayConfig::new(NEW)
+            .with_cipher("aes-256-ecb")
+            .with_previous_keys(vec![OLD.into()]),
+    )
+    .unwrap();
+    assert_ne!(
+        with_prev.decrypt(&payload).unwrap_or_default(),
+        "13800138000",
+        "DB 路径没有密钥环，不该解得开旧密钥的数据"
+    );
+
+    let bare = DbEncrypter::new(&ArrayConfig::new(NEW).with_cipher("aes-256-ecb")).unwrap();
+    assert_eq!(
+        with_prev.encrypt("x").unwrap(),
+        bare.encrypt("x").unwrap(),
+        "previous_keys 不该对 DB 侧输出有任何影响"
+    );
 }
 
 /// 需要真实数据库才能验的两件事：片段能否执行、以及我们的 ECB 字节

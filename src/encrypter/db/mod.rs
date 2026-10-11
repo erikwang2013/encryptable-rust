@@ -4,6 +4,7 @@
 //!
 //! ```text
 //! 载荷 = base64( 版本(1B) || AES-ECB-PKCS7(明文) )
+//! 版本 = 0x04（当前，HKDF 子密钥）| 0x02（1.2.x 旧格式，主密钥直用，只读）
 //! ```
 //!
 //! # 为什么这条路径不是 AEAD
@@ -16,6 +17,12 @@
 //! （性别、状态、省份）加密后几乎等于没加密。这条路径只该用在「必须能按原值查询」
 //! 的列上，其余一律走应用侧。
 //!
+//! # 为什么是子密钥
+//!
+//! 这条路径对任意明文块给出 `E_K(块)` —— 它就是一台加密预言机，主密钥绝不能
+//! 直接喂给它（完整论证见 crate 文档「两条路径」一节）。当前格式（`0x04`）用的是
+//! HKDF 派生的 **DB 侧子密钥**；`0x02` 旧格式保留只读，新写入不再产生。
+//!
 //! # 与 PHP 版的差异
 //!
 //! PHP 在密文前面压了 32 字节 HMAC，好让 SQL 用 `SUBSTRING(..., 33)` 剥掉它。
@@ -25,14 +32,20 @@
 use aes::cipher::{BlockDecrypt, BlockEncrypt, KeyInit};
 use aes::{Aes128, Aes256};
 use base64::Engine as _;
+use zeroize::Zeroizing;
 
 use crate::cipher::Cipher;
 use crate::config::{DbDriver, EncryptableConfig};
+use crate::encrypter::aead::MIN_B64_LEN as AEAD_MIN_B64_LEN;
 use crate::error::{Error, Result};
 use crate::key::Key;
+use crate::support::subkeys;
 
-/// DB 侧载荷的格式字节。应用侧是 [`0x01`](crate::encrypter::aead::VERSION)。
-pub const VERSION: u8 = 0x02;
+/// DB 侧载荷当前写出的格式字节。应用侧是 [`0x03`](crate::encrypter::aead::VERSION)。
+pub const VERSION: u8 = 0x04;
+
+/// DB 侧载荷的旧格式字节（1.2.x，主密钥直用）。**只读** —— 新密文不会再用它。
+pub const LEGACY_VERSION: u8 = 0x02;
 
 /// 块长度，AES 恒为 16。
 const BLOCK: usize = 16;
@@ -40,14 +53,23 @@ const BLOCK: usize = 16;
 /// 载荷最小长度：版本 + 一个满块。
 const MIN_LEN: usize = 1 + BLOCK;
 
+/// 真载荷 base64 后的最短字符数：`ceil(MIN_LEN / 3) × 4`（17 字节 ⇒ 24 字符）。
+const MIN_B64_LEN: usize = MIN_LEN.div_ceil(3) * 4;
+
 /// 确定性加密器。
 ///
 /// 只认 ECB 密码。这一点在构造时就卡死 —— 配了 GCM 却走这条路径是**静默失效**：
 /// 密文每次不同，等值查询永远匹配不上，而报错都不会有一个。
 #[derive(Clone)]
 pub struct DbEncrypter {
-    cipher: EcbCipher,
+    /// 当前格式（0x04）：HKDF 派生的 DB 侧子密钥。
+    current: EcbCipher,
+    /// 旧格式（0x02）：主密钥原样，只读。
+    legacy: EcbCipher,
+    /// 主密钥本体。`key_hex()` 与 `decrypt_expr` 的迁移分支要用。
     key: Key,
+    /// 派生的子密钥。`derived_key_hex()` 要用。
+    derived: Key,
     driver: DbDriver,
 }
 
@@ -116,30 +138,49 @@ impl DbEncrypter {
 
         let raw_key = config.key().ok_or(Error::MissingKey)?;
         let key = Key::parse(raw_key, cipher)?;
+        let derived = subkeys::derive(&key, subkeys::DB_INFO, cipher)?;
 
-        let ecb = match cipher {
-            Cipher::Aes256Ecb => EcbCipher::Aes256(Box::new(
-                Aes256::new_from_slice(key.as_bytes())
-                    .map_err(|e| Error::Encrypt(e.to_string()))?,
-            )),
-            Cipher::Aes128Ecb => EcbCipher::Aes128(Box::new(
-                Aes128::new_from_slice(key.as_bytes())
-                    .map_err(|e| Error::Encrypt(e.to_string()))?,
-            )),
-            // is_deterministic() 已经挡过
-            other => return Err(Error::UnsupportedCipher(other.to_string())),
+        // DB 路径没有密钥环：SQL 片段与 `decrypt` 都只认构造时这一把。
+        // 配置里带着 previous_keys 一定是运维把应用侧的轮换剧本照搬过来了 ——
+        // 那些列的 SQL 侧会静默变 NULL（MySQL）或直接报错（pgcrypto），
+        // 值得在启动日志里响亮一次。不报错：同一份 EnvConfig 喂两条路径是常见写法。
+        if !config.previous_keys().is_empty() {
+            eprintln!(
+                "encryptable：DbEncrypter 忽略 previous_keys —— DB 路径没有密钥环，\
+                 要求 DB 自解的列请重新加密（重写为新主密钥的密文），详见 README「密钥轮换」一节"
+            );
+        }
+
+        let build = |k: &Key| -> Result<EcbCipher> {
+            Ok(match cipher {
+                Cipher::Aes256Ecb => EcbCipher::Aes256(Box::new(
+                    Aes256::new_from_slice(k.as_bytes())
+                        .map_err(|e| Error::Encrypt(e.to_string()))?,
+                )),
+                Cipher::Aes128Ecb => EcbCipher::Aes128(Box::new(
+                    Aes128::new_from_slice(k.as_bytes())
+                        .map_err(|e| Error::Encrypt(e.to_string()))?,
+                )),
+                // is_deterministic() 已经挡过
+                other => return Err(Error::UnsupportedCipher(other.to_string())),
+            })
         };
 
+        let current = build(&derived)?;
+        let legacy = build(&key)?;
+
         Ok(Self {
-            cipher: ecb,
+            current,
+            legacy,
             key,
+            derived,
             driver: config.db_driver(),
         })
     }
 
     /// 使用的密码名。
     pub fn cipher_name(&self) -> &'static str {
-        self.cipher.name()
+        self.current.name()
     }
 
     /// SQL 片段的目标方言。
@@ -147,29 +188,50 @@ impl DbEncrypter {
         self.driver
     }
 
-    /// 加密一段明文。
+    /// 加密一段明文（写入路径）。
     ///
     /// 入参是字符串而不是类型信封：SQL 需要看到**逐字节的原值**，套一层类型字节
     /// 会让数据库里躺着的明文带上信封头，`WHERE` 比对也就对不上了。
     ///
     /// # Errors
     ///
-    /// - [`Error::WrongFormat`] —— 输入是**应用侧**密文（格式字节 `0x01`）。
-    ///   这条是刻意拦的：不拦就会把应用侧密文当明文再加密一遍，静默产生解不开的数据
+    /// - [`Error::WrongFormat`] —— 输入是**应用侧**密文（格式字节 `0x01` / `0x03`）。
+    ///   这条是刻意拦的：不拦就会把应用侧密文当明文再加密一遍，静默产生解不开的数据。
+    ///   判定带长度闸（真应用侧载荷 base64 后恒 ≥ 40 字符），短输入不误伤；
+    ///   超过 40 字符又恰好形状吻合的输入仍可能被误拦 —— 那是形状判定的固有上限，
+    ///   绕过口是 [`seal`](Self::seal)
     /// - [`Error::Encrypt`] —— 底层 ECB 加密失败
     pub fn encrypt(&self, plaintext: &str) -> Result<String> {
-        // 只拦「看起来是应用侧载荷」的输入。不能拦「首字节不是 0x02」的一切 ——
-        // 一段恰好是合法 base64 的普通明文（比如 16 个 'a'，解出来首字节 0x69）
-        // 会被误伤，而那些是再正常不过的待加密数据。
-        if self.format_byte(plaintext) == Some(crate::encrypter::aead::VERSION) {
+        // 只拦「看起来是应用侧载荷」的输入，而且只在长度**可能**是真的应用侧
+        // 载荷时才做形状判定。没有这道长度闸，`AQ`/`AR`/`AS`/`AT` 开头的合法
+        // 业务码（首字节恒为 0x01，由前两个字符唯一决定）会被**永久误拒**，
+        // 而且 DB 侧此前没有绕过口。≥40 字符的长业务码若形状恰好吻合仍会被拒，
+        // 那是形状判定的固有上限 —— 绕过口是 seal()。
+        if plaintext.len() >= AEAD_MIN_B64_LEN
+            && let Some(found) = self.format_byte(plaintext)
+            && (found == crate::encrypter::aead::VERSION
+                || found == crate::encrypter::aead::LEGACY_VERSION)
+        {
             return Err(Error::WrongFormat {
-                found: crate::encrypter::aead::VERSION,
+                found,
                 expected: VERSION,
             });
         }
 
+        self.seal(plaintext)
+    }
+
+    /// 无条件加密，不做「是否已是应用侧密文」的形状判定。
+    ///
+    /// 形状判定有假阳性上限（见 [`encrypt`](Self::encrypt)），这个方法就是那道
+    /// 上限的绕过口：明确知道输入是明文时用它，任何输入都会照常加密。
+    ///
+    /// # Errors
+    ///
+    /// 底层 ECB 加密失败时返回 [`Error::Encrypt`]。
+    pub fn seal(&self, plaintext: &str) -> Result<String> {
         let mut data = pkcs7_pad(plaintext.as_bytes());
-        self.cipher.encrypt_blocks(&mut data);
+        self.current.encrypt_blocks(&mut data);
 
         let mut payload = Vec::with_capacity(1 + data.len());
         payload.push(VERSION);
@@ -178,19 +240,28 @@ impl DbEncrypter {
         Ok(base64::engine::general_purpose::STANDARD.encode(&payload))
     }
 
-    /// 解密自己产出的载荷。用于迁移与 CLI，**不用于查询** ——
-    /// 查询请用 [`decrypt_expr`](Self::decrypt_expr) 让数据库自己解。
+    /// 解密自己产出的载荷（当前格式与旧格式都认）。用于迁移与 CLI，
+    /// **不用于查询** —— 查询请用 [`decrypt_expr`](Self::decrypt_expr) 让数据库自己解。
     ///
     /// # Errors
     ///
     /// - [`Error::Base64`] —— 载荷不是合法 base64
     /// - [`Error::WrongFormat`] —— 载荷是**应用侧**密文，走错了加密器
-    /// - [`Error::Decrypt`] —— 版本字节陌生、长度不足或不是块长的整数倍、
-    ///   PKCS#7 补位不自洽、解密结果不是合法 UTF-8
+    /// - [`Error::Decrypt`] —— 版本字节陌生、载荷太短/不是块长的整数倍（这些是
+    ///   **形状**层面、攻击者自己就能算出的判据），或解密之后补位/编码校验失败
     ///
-    /// 注意：**密钥错**通常不在这条清单里。ECB 没有认证，错密钥解出来多半是
-    /// 乱码字节 —— 补位校验会碰巧挡住一部分，剩下的会以「不是合法 UTF-8」报出来，
-    /// 但也可能原样返回一段看起来正常的乱码。这是 ECB 的固有性质，不是实现缺陷。
+    /// # 为什么解密之后的失败只有一条消息
+    ///
+    /// 补位长度非法、补位字节不自洽、结果不是合法 UTF-8 —— 这三者曾经各有
+    /// 一条可区分的错误消息。ECB 没有认证，在**攻击者能触发解密**（把加密值当
+    /// 不透明 token 收进来）的场景里，可区分的失败就是一个 padding oracle：
+    /// 逐字节改密文、看错误分类，就能还原出 `D_K(·)`。现在它们折叠成同一条
+    /// [`Error::Decrypt`]，与「密钥错」也不可区分 —— 这正是 GCM 侧一贯的做法
+    /// （tag 校验失败只有一个理由）。
+    ///
+    /// 相应地：**密钥错**通常不在这条清单里。ECB 没有认证，错密钥解出来多半是
+    /// 乱码字节 —— 补位/编码校验会碰巧挡住一部分，剩下的也可能原样返回一段
+    /// 看起来正常的乱码。这是 ECB 的固有性质，不是实现缺陷。
     pub fn decrypt(&self, payload: &str) -> Result<String> {
         let decoded = base64::engine::general_purpose::STANDARD
             .decode(payload)
@@ -198,9 +269,13 @@ impl DbEncrypter {
 
         // 与 AeadEncrypter::decrypt 同样的顺序：格式字节优先于长度，
         // 这样走错加密器得到的是「格式不对」而不是「载荷太短」。
-        match decoded.first() {
-            Some(&VERSION) => {}
-            Some(&found) if found == crate::encrypter::aead::VERSION => {
+        // 这两类都是形状判据（不依赖密钥），保留具体消息不构成 oracle。
+        let version = match decoded.first() {
+            Some(&VERSION) | Some(&LEGACY_VERSION) => decoded[0],
+            Some(&found)
+                if found == crate::encrypter::aead::VERSION
+                    || found == crate::encrypter::aead::LEGACY_VERSION =>
+            {
                 return Err(Error::WrongFormat {
                     found,
                     expected: VERSION,
@@ -208,11 +283,11 @@ impl DbEncrypter {
             }
             Some(&found) => {
                 return Err(Error::Decrypt(format!(
-                    "陌生的格式字节 0x{found:02x}，期望 0x{VERSION:02x}"
+                    "陌生的格式字节 0x{found:02x}，期望 0x{VERSION:02x} 或 0x{LEGACY_VERSION:02x}"
                 )));
             }
             None => return Err(Error::Decrypt("载荷为空".into())),
-        }
+        };
 
         if decoded.len() < MIN_LEN {
             return Err(Error::Decrypt(format!(
@@ -221,12 +296,18 @@ impl DbEncrypter {
             )));
         }
 
-        // 就地处理 `decoded`，不再另拷两份。
-        //
-        // 原先写的是 `decoded[1..].to_vec()`（拷 1）再 `plain.to_vec()`（拷 2），
-        // 每次解密白做两次堆分配。版本字节拿切片跳过、补位就地截掉即可，
-        // 最后 `String::from_utf8` 直接接管同一个缓冲（它只校验 UTF-8，不拷贝）。
-        let mut data = decoded;
+        // 两代密钥各解各的：0x02 用主密钥原样，0x04 用 HKDF 子密钥。
+        let cipher = match version {
+            LEGACY_VERSION => &self.legacy,
+            _ => &self.current,
+        };
+
+        // 解密之后的失败一律折叠成同一条消息（见上方「为什么」）。
+        let opaque = || Error::Decrypt("解密失败（补位或编码校验不通过）".into());
+
+        // 就地处理 `decoded`，不再另拷两份 —— 并且裹上 `Zeroizing`：
+        // 解密之后这段缓冲里躺着的是明文，出错提前返回时也不该裸着被丢弃。
+        let mut data = Zeroizing::new(decoded);
         let plain_len = {
             let body = &mut data[1..];
             if !body.len().is_multiple_of(BLOCK) {
@@ -236,23 +317,33 @@ impl DbEncrypter {
                 )));
             }
 
-            self.cipher.decrypt_blocks(body);
-            pkcs7_unpad(body)?.len()
+            cipher.decrypt_blocks(body);
+            // pkcs7_unpad 的具体原因（长度非法 / 字节不自洽）对调用方隐藏 ——
+            // 那是 oracle 的两半。
+            pkcs7_unpad(body).map_err(|_| opaque())?.len()
         };
 
         data.truncate(1 + plain_len); // 截掉 PKCS#7 补位
         data.remove(0); // 去掉版本字节（一次 memmove，不额外分配）
 
-        String::from_utf8(data).map_err(|_| Error::Decrypt("解密结果不是合法 UTF-8".into()))
+        String::from_utf8(std::mem::take(&mut *data)).map_err(|_| opaque())
     }
 
-    /// 廉价判定：形状上像不像 DB 侧密文。
+    /// 廉价判定：形状上像不像 DB 侧密文（含旧格式）。
     pub fn is_encrypted(&self, value: &str) -> bool {
-        matches!(self.format_byte(value), Some(VERSION))
+        matches!(
+            self.format_byte(value),
+            Some(VERSION) | Some(LEGACY_VERSION)
+        )
     }
 
     /// 取 base64 解出后的首字节，形状不对则 `None`。
     fn format_byte(&self, value: &str) -> Option<u8> {
+        // 长度前置：短于真载荷最短 base64 长度的输入不可能解出 `MIN_LEN` 字节，
+        // 连解码都不用试（base64 的 `decode` 会先分配再校验，见其实现）。
+        if value.len() < MIN_B64_LEN || !value.len().is_multiple_of(4) {
+            return None;
+        }
         let decoded = base64::engine::general_purpose::STANDARD
             .decode(value)
             .ok()?;
@@ -264,7 +355,7 @@ impl DbEncrypter {
 
     /// 生成让数据库自己解密的 SQL 表达式。
     ///
-    /// ⚠️ **这个片段把主密钥以十六进制嵌进了 SQL 文本**，于是它会出现在慢查询日志、
+    /// ⚠️ **这个片段把密钥以十六进制嵌进了 SQL 文本**，于是它会出现在慢查询日志、
     /// `pg_stat_statements`、以及任何记录语句的地方。只在
     /// 「`SELECT` 列表里要看到明文」或报表场景用；过滤条件请改用等值比对 ——
     /// 先用 [`encrypt`](Self::encrypt) 算出密文再当参数绑定：
@@ -275,7 +366,12 @@ impl DbEncrypter {
     ///
     /// 这样既不需要在 SQL 里放密钥，也能吃上该列上的索引。
     ///
-    /// 密钥用 **hex** 而非带引号的字符串：片段里因此不含任何 `'`，
+    /// 表达式按格式字节分派：`0x04`（当前）用子密钥、`0x02`（1.2.x 旧数据）用
+    /// 主密钥原样解 —— 迁移期的混合列一条语句就能全读。旧数据搬完（重加密为
+    /// `0x04`）后可以换成只含子密钥的定制语句，把主密钥从 SQL 里彻底拿掉；
+    /// 子密钥的 hex 由 [`derived_key_hex`](Self::derived_key_hex) 提供。
+    ///
+    /// 密钥用 **hex** 而非带引号的字符串：片段里因此不含任何 `'` 转义面，
     /// 转义漏一个字符导致注入的可能性也就不存在了。
     ///
     /// # Errors
@@ -286,15 +382,17 @@ impl DbEncrypter {
     /// 密钥长度、密码可用性等配置错误在构造时就已经报过了，这里不会再报。
     pub fn decrypt_expr(&self, column: &str, driver: DbDriver) -> Result<String> {
         validate_column(column)?;
-        let hex = self.key.to_hex();
-        let hex = hex.as_str();
+        let current = self.derived_key_hex();
+        let current = current.as_str();
+        let legacy = self.key.to_hex();
+        let legacy = legacy.as_str();
 
         Ok(match driver {
             DbDriver::Mysql => format!(
-                "CONVERT( AES_DECRYPT( SUBSTRING( FROM_BASE64({column}), 2 ), UNHEX('{hex}') ) USING 'UTF8' )"
+                "CASE SUBSTRING( FROM_BASE64({column}), 1, 1 ) WHEN 0x04 THEN CONVERT( AES_DECRYPT( SUBSTRING( FROM_BASE64({column}), 2 ), UNHEX('{current}') ) USING 'UTF8' ) WHEN 0x02 THEN CONVERT( AES_DECRYPT( SUBSTRING( FROM_BASE64({column}), 2 ), UNHEX('{legacy}') ) USING 'UTF8' ) ELSE NULL END"
             ),
             DbDriver::Postgres => format!(
-                "convert_from( decrypt( substring( decode({column}, 'base64') from 2 ), '\\x{hex}'::bytea, 'aes-ecb' ), 'UTF8' )"
+                "CASE get_byte( decode({column}, 'base64'), 0 ) WHEN 4 THEN convert_from( decrypt( substring( decode({column}, 'base64') from 2 ), '\\x{current}'::bytea, 'aes-ecb' ), 'UTF8' ) WHEN 2 THEN convert_from( decrypt( substring( decode({column}, 'base64') from 2 ), '\\x{legacy}'::bytea, 'aes-ecb' ), 'UTF8' ) ELSE NULL END"
             ),
         })
     }
@@ -309,9 +407,21 @@ impl DbEncrypter {
         self.decrypt_expr(column, driver)
     }
 
-    /// 主密钥的十六进制表示。给需要在数据库侧配置密钥的场景用。
-    pub fn key_hex(&self) -> zeroize::Zeroizing<String> {
+    /// 主密钥的十六进制表示（与配置里的密钥等价，可回喂
+    /// [`Key::parse`](crate::key::Key::parse)）。
+    ///
+    /// 迁移期的 `0x02` 分支要用它 —— 但那是主密钥本体，别把它留在日志里。
+    /// 当前格式（`0x04`）用 [`derived_key_hex`](Self::derived_key_hex)。
+    pub fn key_hex(&self) -> Zeroizing<String> {
         self.key.to_hex()
+    }
+
+    /// 当前格式（`0x04`）所用的 **DB 侧子密钥** 的十六进制表示。
+    ///
+    /// [`decrypt_expr`](Self::decrypt_expr) 已把两代密钥都内嵌进 CASE 表达式，
+    /// 这个方法只给「旧数据搬完、想手工拼只含子密钥的语句」的场景用。
+    pub fn derived_key_hex(&self) -> Zeroizing<String> {
+        self.derived.to_hex()
     }
 }
 
