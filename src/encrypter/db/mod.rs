@@ -141,7 +141,7 @@ impl DbEncrypter {
         let derived = subkeys::derive(&key, subkeys::DB_INFO, cipher)?;
 
         // DB 路径没有密钥环：SQL 片段与 `decrypt` 都只认构造时这一把。
-        // 配置里带着 previous_keys 一定是运维把应用侧的轮换剧本照搬过来了 ——
+        // 配置里带着 previous_keys 一定是运维把应用侧的轮换剧本套用过来了 ——
         // 那些列的 SQL 侧会静默变 NULL（MySQL）或直接报错（pgcrypto），
         // 值得在启动日志里响亮一次。不报错：同一份 EnvConfig 喂两条路径是常见写法。
         if !config.previous_keys().is_empty() {
