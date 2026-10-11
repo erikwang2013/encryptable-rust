@@ -45,7 +45,7 @@ aes-gcm = { version = "0.10", features = ["zeroize"] }
 # aes 轮密钥同样清零；二是 DB 路径的 ECB 直接基于 Aes256/Aes128 手写 —— 见
 # docs 里「不引入 ecb crate」的说明（ecb 0.2 走 cipher 0.5，与 aes-gcm 0.10
 # 的 cipher 0.4 不兼容，引进来会拖入第二套 AES 栈）。
-aes = { version = "0.8", features = ["zeroize"] }
+aes = { version = "0.9", features = ["zeroize"] }
 # 不启用 `zeroize_derive`：本 crate 没有一处 `derive(Zeroize)`，用到的只有
 # `Zeroizing` 包装类型，那在 `zeroize` 本体里。开着一个用不上的 proc-macro
 # feature 只是白编译。
