@@ -40,7 +40,7 @@ name = "encryptable"
 path = "src/bin/encryptable.rs"
 
 [dependencies]
-aes-gcm = { version = "0.10", features = ["zeroize"] }
+aes-gcm = { version = "0.11", features = ["zeroize"] }
 # 直接依赖 aes 有两个原因：一是启用其 zeroize feature，让 aes-gcm 内部使用的
 # aes 轮密钥同样清零；二是 DB 路径的 ECB 直接基于 Aes256/Aes128 手写 —— 见
 # docs 里「不引入 ecb crate」的说明（ecb 0.2 走 cipher 0.5，与 aes-gcm 0.10
