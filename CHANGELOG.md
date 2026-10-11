@@ -102,7 +102,8 @@
 - clippy 与 doc 改 `--all-features`：八个集成模块此前从未被 lint / 断链检查 ——
   1.2.1 修的那批框架文档示例错误正是被 feature 门挡在 CI 外的类型。
 - 全部 cargo 命令加 `--locked`（lock 已提交：有 bin 且 MSRV job 靠它钉版本）；
-  package job 去掉 `--allow-dirty`。MSRV job 加 `--all-features`。
+  package job 去掉 `--allow-dirty`。MSRV job 维持默认 feature 检查 —— 可选框架
+  依赖的 MSRV 由上游决定（如 salvo 需要 1.94），不在本 crate 的 1.88 承诺内。
 - `actions/checkout` v4 → v7；新增 `dependabot.yml`（cargo + actions，每周）
   与每周的 `cargo audit` 工作流（加密库的 RUSTSEC 公告不该靠人记得）。
 - `Cargo.toml` 补 `[package.metadata.docs.rs] all-features = true` —— 此前

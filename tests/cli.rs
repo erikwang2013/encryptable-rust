@@ -43,12 +43,15 @@ fn run(args: &[&str], envs: &[(&str, &str)], stdin: Option<&str>) -> (i32, Strin
 
     let mut child = cmd.spawn().expect("无法启动 encryptable 二进制");
     if let Some(input) = stdin {
-        child
+        // 写入是**尽力而为**：错误路径的子进程（比如缺 ENCRYPTION_KEY）根本不读
+        // stdin、会先行退出，此时写入撞上 EPIPE 属正常时序 —— 本地跑得快正好能写
+        // 进去、CI 上必炸的间歇性红就是这么来的。真正依赖 stdin 的用例若没送达，
+        // 后面的断言（退出码 / 值往返）自然会发现。
+        let _ = child
             .stdin
             .take()
             .expect("stdin 是 piped")
-            .write_all(input.as_bytes())
-            .expect("写 stdin 失败");
+            .write_all(input.as_bytes());
     }
     let out = child.wait_with_output().expect("等待子进程失败");
     (

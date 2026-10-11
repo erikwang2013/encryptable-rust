@@ -74,12 +74,15 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       # Cargo.toml 声明了 rust-version = "1.88"，那就得真的验一下 ——
-      # 否则「支持 1.88」只是一句没人检查的话。`--all-features` 把可选依赖
-      # （axum/actix/rocket…）的 MSRV 漂移也纳入检查：开着 feature 的用户
-      # 同样只拿到「支持 1.88」这句承诺。
+      # 否则「支持 1.88」只是一句没人检查的话。
+      #
+      # 刻意**不带** `--all-features`：可选的框架依赖各带各的 MSRV、且由上游
+      # 自行决定（例如 salvo 1.0.1 声明需要 rustc 1.94）—— 那不属于本 crate
+      # 的 1.88 承诺。八个 feature 与全部框架代码的编译验证由上面 Feature 矩阵
+      # 与 Clippy（stable、all-features）负责。
       - uses: dtolnay/rust-toolchain@1.88
       - uses: Swatinem/rust-cache@v2
-      - run: cargo check --locked --all-targets --all-features
+      - run: cargo check --locked --all-targets
 
   features:
     name: Feature ${{ matrix.feature }}
