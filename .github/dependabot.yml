@@ -1,0 +1,18 @@
+# Copyright (c) 2026 erik <erik@erik.xyz> — https://erik.xyz
+#
+# 加密库对 RUSTSEC 告警敏感，却没有自动发现渠道 —— dependabot 补上。
+# 每周一次、限量开 PR：版本升级一样走 PR，让 CI 全量（含 all-features）验证。
+
+version: 2
+updates:
+  - package-ecosystem: cargo
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5

@@ -31,7 +31,7 @@ jobs:
     name: Fmt
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
@@ -41,15 +41,18 @@ jobs:
     name: Clippy
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: clippy
       - uses: Swatinem/rust-cache@v2
-      - run: cargo clippy --all-targets --features serde -- -D warnings
+      # `--all-features`：曾经只跑 `--features serde`，八个框架集成模块从未被
+      # lint 过 —— 1.2.1 修的那批框架文档示例错误正是被 feature 门挡在 CI 外
+      # 的类型。本机 all-features 已验证全绿，直接上。
+      - run: cargo clippy --all-targets --all-features -- -D warnings
       # 文档里的 intra-doc 链接断了不该等到发布才发现 —— 加 `-D warnings` 让它
       # 变成硬失败。这类断链只在 `cargo doc` 时才报，clippy 与 test 都看不见。
-      - run: cargo doc --no-deps --features serde
+      - run: cargo doc --no-deps --all-features
         env:
           RUSTDOCFLAGS: -D warnings
 
@@ -57,22 +60,26 @@ jobs:
     name: Test (default + serde)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test
-      - run: cargo test --features serde
+      # Cargo.lock 已提交（有 bin，且 MSRV job 靠它钉依赖版本）—— 全部命令
+      # 加 `--locked`：忘提交 lock 更新会在 CI 变红，而不是静默重新解析。
+      - run: cargo test --locked
+      - run: cargo test --locked --features serde
 
   msrv:
     name: MSRV 1.88
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Cargo.toml 声明了 rust-version = "1.88"，那就得真的验一下 ——
-      # 否则「支持 1.88」只是一句没人检查的话
+      # 否则「支持 1.88」只是一句没人检查的话。`--all-features` 把可选依赖
+      # （axum/actix/rocket…）的 MSRV 漂移也纳入检查：开着 feature 的用户
+      # 同样只拿到「支持 1.88」这句承诺。
       - uses: dtolnay/rust-toolchain@1.88
       - uses: Swatinem/rust-cache@v2
-      - run: cargo check --all-targets
+      - run: cargo check --locked --all-targets --all-features
 
   features:
     name: Feature ${{ matrix.feature }}
@@ -91,20 +98,22 @@ jobs:
           - bee-rust
           - ecat
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.feature }}
-      - run: cargo test --features ${{ matrix.feature }}
+      - run: cargo test --locked --features ${{ matrix.feature }}
 
   package:
     name: Package
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       # 打好的包必须自身能编译 —— 这是 crates.io 上会发生的事，
-      # 而 docs/pet.svg 被 include_str! 在编译期读取，漏发会当场暴露
-      - run: cargo publish --dry-run --allow-dirty
+      # 而 docs/pet.svg 被 include_str! 在编译期读取，漏发会当场暴露。
+      # 不加 `--allow-dirty`：干净检出下它只会掩盖问题（它原本是为 lock
+      # 变更兜底的，`--locked` 之后不再需要）。
+      - run: cargo publish --dry-run --locked

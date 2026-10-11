@@ -5,6 +5,111 @@
 本文件记录本 crate 的显著变更，格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [1.3.0] - 2026-10-11
+
+一次深度安全评审后的版本，核心是**密钥分离**。密文格式换代到 `0x03`/`0x04`，
+但**双读**：1.2.x 写出的旧密文无需任何操作即可照读。
+
+### 安全
+
+- **密钥分离（HKDF-SHA256）。** DB 路径的确定性 ECB 对任意明文块给出
+  `E_K(块)`，本质上是一台加密预言机 —— 而此前的 README 与测试都教用户两条
+  路径共用同一把主密钥。那会让**能往 DB 侧列写入可控值**的攻击者借它取得
+  GCM 的 keystream（命中行约前 2 KB 明文）与 GHASH 子密钥 H（16 个 NUL 即可，
+  无条件），机密性与完整性同时失守。现在主密钥只做派生：应用侧与 DB 侧各拿
+  一把互不可推的子密钥（`info` 分别为 `encryptable-rust/aead/v1` 与
+  `encryptable-rust/db-ecb/v1`）。「两条路径配同一把主密钥」从**危险**变为
+  **推荐**。金标量由 Python `cryptography` 独立复算、openssl 交叉验证。
+- **上下文绑定。** 新增 `seal_with_context` / `decrypt_with_context` /
+  `decrypt_text_with_context` / `rotate_to_current_key_with_context`（`Guard`
+  同名转发）：上下文进 AAD，把密文钉死在「哪一行/哪一列」上，防「把别人的
+  密文粘到自己行上」。此前 AAD 只有版本字节，跨行跨列的密文移植**照样过认证**。
+- **DB 解密错误文案折叠。** 补位长度非法、补位字节不自洽、结果不是合法 UTF-8
+  曾各有可区分的消息 —— 在攻击者能触发解密的场景里就是一个 padding oracle
+  （逐字节改密文看错误分类，可还原 `D_K(·)`）。现在折叠成一条，与「密钥错」
+  也不可区分，与应用侧 tag 校验失败的做法一致。
+
+### 修复
+
+- **`DbEncrypter::encrypt` 不再永久误拒 `AQ`/`AR`/`AS`/`AT` 开头的合法明文。**
+  首字节恒为 `0x01` 由前两个 base64 字符唯一决定，因此 24 字符及以上的此类
+  业务码（订单号、券码、SKU）此前**每次**被拒，且 DB 侧没有绕过口。现在形状
+  闸带长度前置（真应用侧载荷 base64 后恒 ≥ 40 字符），并新增
+  `DbEncrypter::seal()` 作为显式绕过口。
+- **`decrypt_or_original` 不再返回类型名。** `Value::Int(42)` 曾经解出 `"int"` ——
+  既不是原值也不是原输入，是静默的数据损坏。现在按 `Display` 渲染（`"42"`，
+  `Null` → 空串）。
+- **AES-128 的 hex 密钥可以解析了。** hex 分支此前写死 64 字符：AES-128 的
+  `to_hex()` 输出（32 字符）喂回解析器会被当成 32 字节字面量拒绝。现在按
+  「密码要求长度的两倍」判定。
+- **`EnvConfig::from_env()` 的 panic 文案修正并补 `## Panics` 文档** ——
+  此前在 `ENCRYPTION_PREVIOUS_KEYS` 写成 JSON 时 panic，消息却写着
+  「未设置时不可能失败」，与事实相反。
+- **`DbEncrypter::new` 在配置带 `previous_keys` 时向 stderr 打警告**：DB 路径
+  没有密钥环，照应用侧剧本轮换会让 SQL 一侧静默变 NULL（MySQL）或报错
+  （pgcrypto）。此前只有 README 里一句「已知上限」。
+- **CLI**：移除空操作的 `--raw`（帮助文本曾列出它）；管道输入 trim 全部尾随
+  空白（修 Windows 风格 `\r` 残留导致解密静默失败），不再 `Box::leak`；
+  `--driver` 严格校验且只对 `sql` 命令有效；无参数时用法说明改走 stderr
+  （stdout 留给正常输出）；`keygen` 的 hex 拼装单次分配。
+- **warp 的 pet 过滤器补 `path::end()`**：`/pet.svg/anything` 不再被吞，
+  与其余七个适配器的精确路径一致。
+
+### 变更（行为收紧）
+
+- 新密文一律 `0x03`（应用侧）/ `0x04`（DB 侧）；`0x01`/`0x02` 旧格式**只读**，
+  `rotate_to_current_key()` 会把旧格式一并搬成 `0x03`。`is_encrypted` 两代都认。
+- `decrypt_expr` 产出按格式字节分派的 CASE 表达式，两代密钥都内嵌 —— 迁移期
+  的混合列一条语句全读；旧数据搬完后可改用只含子密钥（`derived_key_hex()`）
+  的手写语句，把主密钥从 SQL 里拿掉。
+- `pet::data_uri()` 返回 `&'static str`（`LazyLock` 静态化，README 示例中它是
+  每请求路径，此前每次重编码 4.7 KB）；新增 `pet::DATA_URI` 常量。
+- `Value` 的 `Debug` 遮蔽字符串载荷（`decrypt()` 的返回值最容易被
+  `tracing::debug!(?v)` 随手记录，而它是明文 PII）；`ArrayConfig` / `EnvConfig`
+  的密钥字段 `Zeroizing` 化、`Debug` 手写遮蔽 —— 此前 `dbg!(config)` 会直接
+  打印主密钥。
+- **`Error` 与 `Cipher` 标注 `#[non_exhaustive]`**：下游穷尽 `match` 需要补
+  `_` 分支。趁 1.x 早期收紧，之后再补代价只增不减。
+
+### 性能
+
+- 形状判定的长度前置（短于真载荷最短 base64 字符数的输入免解码再判）：
+  DB 写路径实测 ~-33%、应用侧 ~-4%；顺带缓解「为看一个字节全量解码」的
+  大输入放大。判据是必要条件，不会漏判任何真密文 —— 语义不变。
+- `pet::data_uri()` 编码只做一次。
+
+### 测试
+
+- 新增 `tests/cli.rs`：子进程级契约（keygen→encrypt→decrypt 往返、退出码
+  0/1/2、管道输入与尾随空白、`--driver` 严格性、SQL 命令的 stdout/stderr 分工）。
+- 新增：上下文绑定（含错误上下文、跨路径拒绝、轮换保持绑定）；旧格式 `0x01`
+  载荷的手工构造与双读；「当前格式用子密钥而非主密钥」的源码级断言（两侧）；
+  并发 nonce 唯一性（8 线程 × 200）；1 MiB 往返；DB 忽略 `previous_keys` 钉死；
+  AES-128 金标量；`AQ` 前缀误拒回归。
+- 金标量换代：`0x04` 向量由 Python `cryptography` + openssl 独立复算；
+  原 `0x02` OpenSSL 向量转为**双读回归锚**（只断言解密，不再断言加密输出）。
+
+### 文档
+
+- README（中英）：载荷格式表、新增「密钥分离」一节、SQL 片段为 CASE 形态、
+  上下文绑定用法、CLI 提示、已知上限逐条同步；修掉框架集成安装示例的
+  `version = "0.1"`（crates.io 从无此版本，照抄会直接解析失败）。
+
+### CI / 发布
+
+- clippy 与 doc 改 `--all-features`：八个集成模块此前从未被 lint / 断链检查 ——
+  1.2.1 修的那批框架文档示例错误正是被 feature 门挡在 CI 外的类型。
+- 全部 cargo 命令加 `--locked`（lock 已提交：有 bin 且 MSRV job 靠它钉版本）；
+  package job 去掉 `--allow-dirty`。MSRV job 加 `--all-features`。
+- `actions/checkout` v4 → v7；新增 `dependabot.yml`（cargo + actions，每周）
+  与每周的 `cargo audit` 工作流（加密库的 RUSTSEC 公告不该靠人记得）。
+- `Cargo.toml` 补 `[package.metadata.docs.rs] all-features = true` —— 此前
+  docs.rs 上八个集成模块与 serde API 完全不可见。
+
+### 依赖
+
+- 新增 `hkdf` 0.12 与 `sha2` 0.10（用途子密钥派生 —— 安全原语不手写）。
+
 ## [1.2.1] - 2026-10-07
 
 一次审计后的内部优化。**没有 API 变化，没有密码学行为变化** —— 1.2.0 产生的
@@ -177,6 +282,7 @@
 
 运行时只有 4 个：`aes-gcm` · `aes` · `zeroize` · `base64`。
 
+[1.3.0]: https://github.com/erikwang2013/encryptable-rust/releases/tag/v1.3.0
 [1.2.1]: https://github.com/erikwang2013/encryptable-rust/releases/tag/v1.2.1
 [1.2.0]: https://github.com/erikwang2013/encryptable-rust/releases/tag/v1.2.0
 [1.1.0]: https://github.com/erikwang2013/encryptable-rust/releases/tag/v1.1.0

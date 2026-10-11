@@ -1,0 +1,26 @@
+# Copyright (c) 2026 erik <erik@erik.xyz> — https://erik.xyz
+#
+# 每周跑一次 cargo audit：这个 crate 是加密库，RUSTSEC 公告（AES/GCM/HKDF
+# 栈或 base64/zeroize 的任何 CVE）必须有人主动看。刻意**不**挂在每个 PR 上 ——
+# 上游新公告会让无关 PR 全体变红，每周巡检 + dependabot 的 security alert
+# 足够覆盖。手动触发用 workflow_dispatch。
+
+name: Audit
+
+on:
+  schedule:
+    # 周一 03:41 UTC（避开整点高峰；GitHub 的 cron 本就可能延迟）
+    - cron: "41 3 * * 1"
+  workflow_dispatch:
+
+jobs:
+  audit:
+    name: cargo audit
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      # 不借第三方 action 包装（少一个要跟版本的依赖），手动装、显式跑。
+      - run: cargo install cargo-audit --locked
+      - run: cargo audit

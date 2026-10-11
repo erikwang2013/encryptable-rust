@@ -4,7 +4,7 @@
 
 <img src="../../pet.svg" alt="Locky · 小锁灵 — the project pet" width="26"> [简体中文](../../../README.md) · **English (this page)**
 
-Query-friendly anonymization / encryption for sensitive columns: encrypt before persisting, decrypt on read, and emit MySQL / PostgreSQL-compatible SQL fragments for comparing against encrypted columns. A Rust port of the PHP package [`erikwang2013/encryptable`](https://github.com/erikwang2013/encryptable), it uses two paths to split apart the pair of requirements that usually cannot both be met — "encrypt at rest" and "query by original value": the application side AES-256-GCM (random nonce, authenticated, **the default choice**), the DB side AES-256-ECB (deterministic, reserved for columns that must be matched by original value inside a `WHERE`).
+Query-friendly anonymization / encryption for sensitive columns: encrypt before persisting, decrypt on read, and emit MySQL / PostgreSQL-compatible SQL fragments for comparing against encrypted columns. A Rust port of the PHP package [`erikwang2013/encryptable`](https://github.com/erikwang2013/encryptable), it uses two paths to split apart the pair of requirements that usually cannot both be met — "encrypt at rest" and "query by original value": the application side AES-256-GCM (random nonce, authenticated, **the default choice**), the DB side AES-256-ECB (deterministic, reserved for columns that must be matched by original value inside a `WHERE`). Each path derives **its own subkey** from the primary key via HKDF — see [Key separation](#key-separation-why-the-db-side-must-not-use-the-primary-key-directly).
 
 Project pet **Locky · 小锁灵** ([`docs/pet.svg`](../../pet.svg)) — the amber one on the key ring is the current primary key; the two grey ones are `previous_keys`.
 
@@ -117,17 +117,20 @@ encryptable-rust/
 │   ├── config/                EncryptableConfig trait + DbDriver dialects
 │   │                          ArrayConfig (config in code) / EnvConfig (reads ENCRYPTION_*)
 │   ├── encrypter/             exports of the two paths + format-byte invariants
-│   │   ├── aead/mod.rs        application-side envelope · key ring · rotation
+│   │   ├── aead/mod.rs        application-side envelope · key ring · HKDF subkey · context binding · rotation
 │   │   ├── aead/tests.rs      application-side unit tests (split off to stay under the 500-line-per-file cap)
-│   │   ├── db/mod.rs          PKCS#7 + ECB · SQL fragments · column-name allowlist
+│   │   ├── db/mod.rs          PKCS#7 + ECB · HKDF subkey · SQL fragments · column-name allowlist
 │   │   └── db/tests.rs        DB-side unit tests (including the OpenSSL golden vector)
 │   ├── integrations/          framework adapter layer: Guarded trait + one module per framework
 │   │                          mod.rs (Guarded · GuardNotConfigured), axum.rs,
 │   │                          actix.rs, rocket.rs, poem.rs, salvo.rs, warp.rs,
 │   │                          ecat.rs (tower layer); bee_rust reuses axum
-│   ├── support/previous_keys.rs  comma-separated retired-key parsing (a JSON array is explicitly rejected)
+│   ├── support/
+│   │   ├── previous_keys.rs   comma-separated retired-key parsing (a JSON array is explicitly rejected)
+│   │   └── subkeys.rs         HKDF-SHA256 purpose-subkey derivation (internal)
 │   └── bin/encryptable.rs     CLI: 8 commands, hand-written argument parsing, no clap
 ├── tests/
+│   ├── cli.rs                 CLI subprocess contract: command round trips, exit codes 0/1/2, piped input
 │   ├── db_sql.rs              SQL fragments pinned character by character, column-name injection defences, stability of bound queries
 │   ├── invariants.rs          cross-module invariants: round trip, tampering, determinism, the two payload kinds never working with each other
 │   └── rotation.rs            the entire zero-downtime rotation migration path
@@ -142,7 +145,8 @@ encryptable-rust/
 │   ├── alipay.png             donation QR code
 │   └── weixinpay.png          donation QR code
 ├── .github/workflows/ci.yml   CI: fmt · clippy · test · MSRV 1.88 · one matrix job per feature · packaging
-└── Cargo.toml                 default dependencies are only aes-gcm / aes / zeroize / base64
+├── .github/workflows/audit.yml  weekly cargo audit (RUSTSEC advisories)
+└── Cargo.toml                 default dependencies are only aes-gcm / aes / hkdf / sha2 / zeroize / base64
 ```
 
 ---
@@ -162,25 +166,42 @@ Encryption at rest (not hashing, not masking) and "query by the original value" 
 
 The DB path being limited to ECB is not legacy baggage, it is a hard boundary of what databases can do: MySQL's `AES_DECRYPT` and pgcrypto's `decrypt` both accept only ECB/CBC — **no GCM**. If you want the database to decrypt for itself, there is no other choice.
 
-The payloads the two paths produce are **incompatible**; each carries its own format byte (application side `0x01`, DB side `0x02`), and mixing them yields an explicit `Error::WrongFormat` rather than a silent second encryption.
+The payloads the two paths produce are **incompatible**; each carries its own format byte (application side `0x03`, previous generation `0x01`; DB side `0x04`, previous generation `0x02`). Decrypting with the wrong kind yields an explicit `Error::WrongFormat`, and **DB-side encryption** refuses application-side payloads (length-gated, so short inputs are not caught by mistake; the escape hatch is `DbEncrypter::seal`). The reverse direction — **application-side encryption** — has no free assertion (ECB is unauthenticated, and the shape check has a false-positive ceiling, so refusing would misfire on lookalike plaintext): never feed DB-side ciphertext into `AeadEncrypter::encrypt`. The asymmetry is deliberate.
+
+### Key separation: why the DB side must not use the primary key directly
+
+The DB side's deterministic ECB maps any plaintext block to `E_K(block)` — it is, in effect, **an encryption oracle**. If it shared one primary key K with AES-GCM, an attacker could use it to obtain `E_K(nonce ‖ counter)` (GCM's data keystream and tag mask) and even `E_K(0^128)` (the GHASH subkey H), breaking confidentiality and integrity at once — "a GCM key must be used for one purpose only" is an old requirement (NIST SP 800-57).
+
+So the primary key does exactly one thing: it derives. Each path gets its own subkey, neither derivable from the other:
+
+```text
+subkey = HKDF-SHA256(ikm = primary key, salt = empty, info = purpose string, L = the cipher's key length)
+application side purpose: "encryptable-rust/aead/v1"
+DB side purpose:          "encryptable-rust/db-ecb/v1"
+```
+
+Which makes "configure both paths with the same primary key" safe — and the recommended deployment. The derivation is deterministic: `openssl kdf` and Python's `cryptography` can recompute it independently — which is how the golden vectors in the test suite are cross-checked (see "Development").
 
 ### Architectural principles
 
 - **Each path declares for itself which ciphers it accepts** — the application side takes only AEAD (an unauthenticated ciphertext silently yields garbage when tampered with), the DB side takes only deterministic ECB (otherwise equality queries never match). The check is at **construction time**: misconfigure it and it blows up at startup, not on some request path at three in the morning.
 - **Configuration is a trait, not a global table** — `EncryptableConfig` has only four methods (`key` / `cipher` / `previous_keys` / `db_driver`), and the last three have default implementations, so the minimal implementation only needs to override `key()`. `ArrayConfig` and `EnvConfig` are its two implementations; no container, no callbacks, no third-level fallback.
 - **Reading the config is a snapshot, not a live view** — the encrypter reads environment variables into its own fields at construction, and changing the environment afterwards does not affect an encrypter already built. That is predictable, and it also sidesteps the race where a value is changed by someone else halfway through being read.
-- **Key length is fixed at construction time** — no truncation, no zero-padding. Zero-padding would use a weak passphrase directly as a key (there is no KDF, no salt, no iteration here); truncation would leave a rotation landing on the same prefix key, with ops believing the key was rotated when it was not.
-- **Keys are wrapped in `Zeroizing` in memory, and `Debug` is hand-written to redact** — `format!("{key:?}")` prints only the byte count; no stray `dbg!` or error message can leak the primary key.
-- **Failures are not silent** — what will not decrypt is an error; there is no "return the original on failure" fallback, which is the main way plaintext gets quietly written into an encrypted column. When you really need it, use `decrypt_or_original` so the decision appears explicitly at the call site.
+- **Key length is fixed at construction time** — no truncation, no zero-padding. Zero-padding would use a weak passphrase directly as a key (the primary key is not stretched, see "Known limits"); truncation would leave a rotation landing on the same prefix key, with ops believing the key was rotated when it was not.
+- **Purpose subkeys are derived at construction time** — HKDF-SHA256 gives each path its own subkey (see "Key separation"), with every key on the ring deriving its own.
+- **Keys are wrapped in `Zeroizing` in memory, and `Debug` is hand-written to redact** — the `format!("…{x:?}")` of `Key`, `ArrayConfig`, `EnvConfig` and `Guard` prints only byte counts or placeholders; no stray `dbg!` or error message can leak the primary key. `Value`'s `Debug` redacts string payloads too (it carries plaintext).
+- **Failures are not silent** — what will not decrypt is an error; there is no "return the original on failure" fallback, which is the main way plaintext gets quietly written into an encrypted column. When you really need it, use `decrypt_or_original` so the decision appears explicitly at the call site. The DB path ignoring `previous_keys` also prints a warning to stderr rather than leaving you to discover one day that the SQL side is all NULLs.
 - **A type mismatch is an error, not a guess** — binary type envelope, an `int` payload must be exactly 8 bytes, one byte more is an error too. The PHP version's `integer:"abc"` silently becomes `0`; here it is `Error::Unserialize`.
 - **`#![forbid(unsafe_code)]`** — not a single line of `unsafe` in the whole crate.
-- **No dependency for what a few dozen lines can do** — hand-written `Display` instead of `thiserror`; hand-written PKCS#7 + ECB instead of the `ecb` crate; hand-written column-name allowlist instead of `regex`; hand-written CLI argument parsing instead of `clap`.
+- **No dependency for what a few dozen lines can do** — hand-written `Display` instead of `thiserror`; hand-written PKCS#7 + ECB instead of the `ecb` crate; hand-written column-name allowlist instead of `regex`; hand-written CLI argument parsing instead of `clap`. The one exception is security primitives: HKDF uses `hkdf` + `sha2` — cryptography is not hand-written.
 
 ### Trade-offs
 
 | Decision | Choice | Reason |
 |----------|--------|--------|
 | ECB vs CBC (DB side) | ECB | Determinism is the precondition for equality queries; CBC's IV differs every time, so `WHERE` never matches and the SQL fragment cannot decrypt it either |
+| Raw primary key vs purpose subkeys | Subkeys (HKDF-SHA256) | DB-side ECB maps any block to `E_K(block)` — an encryption oracle; sharing one primary key with GCM breaks confidentiality and integrity at once (NIST SP 800-57: a GCM key must be used for one purpose only) |
+| Format replacement vs in-place semantic change | New version bytes `0x03`/`0x04` + dual read | Upgrading never touches old ciphertext — new writes, old reads; the old formats are only retired after `rotate_to_current_key()` has moved them |
 | Determinism vs semantic security | Deterministic only on the DB side | The application side keeps the semantic security of a random nonce; determinism is the entry fee for "query by original value", paid only on the columns that need it |
 | Binary envelope vs text envelope | Binary | The PHP version goes through `settype()`, where `integer:"abc"` silently becomes `0`; the binary envelope errors out on a type mismatch |
 | GCM tag vs hand-rolled HMAC | GCM tag | PHP prepended a 32-byte HMAC to DB-side ciphertext purely so SQL could strip it with `SUBSTRING(..., 33)`; the DB side never verified it — dropped here, the position goes to the version byte and SQL only needs `SUBSTRING(..., 2)` |
@@ -204,10 +225,14 @@ Read the diagram bottom-up: the support modules (key ring, type envelope, cipher
 
 This is the one table worth remembering above all:
 
-| | Layout | Type envelope | AAD |
+| | Layout (two generations of version byte coexist; **new writes always use the current one**) | Type envelope | AAD |
 |---|---|---|---|
-| Application side | `base64( 0x01 \|\| nonce(12B) \|\| AES-GCM ciphertext \|\| tag(16B) )` | Yes: `tag(1B) \|\| payload` | Version byte |
-| DB side | `base64( 0x02 \|\| AES-ECB-PKCS7(plaintext) )` | **No** | None |
+| Application side current `0x03` | `base64( 0x03 \|\| nonce(12B) \|\| AES-GCM ciphertext \|\| tag(16B) )` | Yes: `tag(1B) \|\| payload` | Version byte [‖ context] |
+| Application side legacy `0x01` | Same, first byte `0x01`, raw primary key (1.2.x, **read-only**) | Yes | Version byte |
+| DB side current `0x04` | `base64( 0x04 \|\| AES-ECB-PKCS7(plaintext) )` | **No** | None |
+| DB side legacy `0x02` | Same, first byte `0x02`, raw primary key (1.2.x, **read-only**) | **No** | None |
+
+Above the version bytes sits a **key** generation: the current generation uses HKDF-derived purpose subkeys (previous section), the legacy generation used the raw primary key; both stay readable. Ciphertext written by 1.2.x keeps working with **no action at all**; migrate incrementally with `rotate_to_current_key()` (or the CLI's `rotate`) into `0x03`, after which the primary key stops touching ciphertext entirely. The same holds for DB-side legacy columns: once they are `0x04`, you can swap in an SQL statement that only contains the subkey and take the primary key out of the SQL.
 
 The type envelope's byte definition (application side): a 1-byte tag plus a fixed-length payload — `0x00` no payload (`Null`), `0x01` UTF-8 bytes (`String`), `0x02` little-endian i64 in 8 bytes (`Int`), `0x03` little-endian f64 in 8 bytes (`Float`), `0x04` a single 0/1 byte (`Bool`). Payload length and type byte must match **exactly**; one byte more is an error.
 
@@ -223,15 +248,17 @@ The DB side carrying no type envelope is deliberate: SQL needs to see the **byte
 
 | Method | What it does |
 |--------|--------------|
-| `new(&config)` | Validates at construction that the cipher is AEAD, that the key length matches, and that previous keys are the same length as the primary |
-| `encrypt(value)` | Encrypts a value; a ciphertext already in this format is **returned as-is**. The check is an actual decryption attempt, not a look at the shape |
+| `new(&config)` | Validates at construction that the cipher is AEAD, that the key length matches, that previous keys are the same length as the primary, and derives the subkeys |
+| `encrypt(value)` | Encrypts a value; a ciphertext already in this format (either generation) is **returned as-is**. The check is an actual decryption attempt, not a look at the shape. Do not feed context-bound ciphertext here |
 | `seal(value)` | Unconditionally encrypts, with no "is it already ciphertext" check |
+| `seal_with_context(ctx, value)` | Context-bound encryption: the context goes into the AAD, pinning the ciphertext to a row/column and blocking "paste someone else's ciphertext into my row" |
 | `decrypt(payload)` | Decrypts into a `Value`; any one key on the key ring succeeding is enough |
 | `decrypt_text(payload)` | Decrypts and asserts that the result is a string |
-| `decrypt_or_original(payload)` | The lenient version: returns the input as-is when it cannot be decrypted (an explicit choice) |
+| `decrypt_with_context(ctx, payload)` / `decrypt_text_with_context` | Decrypts context-bound payloads; a mismatched context fails authentication (a feature, not a defect) |
+| `decrypt_or_original(payload)` | The lenient version: returns the input as-is when it cannot be decrypted; a non-string value is rendered via `Display` (`Int(42)` → `"42"`, no longer the type name) |
 | `is_encrypted(value)` | Cheap shape check; touches no key, does no authentication |
-| `rotate_to_current_key(payload)` | Reads with the old key, writes with the new one; input that is already plaintext is returned as-is |
-| `cipher_name()` / `ring_len()` / `primary_key_hex()` | Diagnostics; the last one is the primary key in hex (`Zeroizing<String>`) |
+| `rotate_to_current_key(payload)` / `..._with_context` | Reads with the old key, writes with the new one (legacy `0x01` is moved to `0x03` too); input that is already plaintext is returned as-is |
+| `cipher_name()` / `ring_len()` / `primary_key_hex()` | Diagnostics; the last one is the **primary key** in hex (`Zeroizing<String>`) |
 
 The encryption entry points take `impl Into<Value>`: `&str` / `String` / `i64` / `i32` / `f64` / `bool` / `Option<T>` can all be passed directly. `None` maps to `Value::Null` — note that **`Null` gets encrypted into a ciphertext**, which is not the same thing as "no value"; whether to store a SQL `NULL` is the caller's decision, and this library will not make it for you.
 
@@ -239,13 +266,14 @@ The encryption entry points take `impl Into<Value>`: `&str` / `String` / `i64` /
 
 | Method | What it does |
 |--------|--------------|
-| `new(&config)` | Validates at construction that the cipher is deterministic ECB |
-| `encrypt(plaintext)` | Deterministic encryption, producing ciphertext that can be bound straight into a `WHERE`; if the input is already an application-side payload it raises `Error::WrongFormat` |
-| `decrypt(payload)` | Restores (for migration and the CLI, **not for queries**) |
-| `decrypt_expr(column, driver)` | Emits the SQL fragment that lets the database decrypt for itself |
+| `new(&config)` | Validates at construction that the cipher is deterministic ECB and derives the subkey; a config carrying `previous_keys` triggers a warning on stderr (the DB path has no key ring) |
+| `encrypt(plaintext)` | Deterministic encryption, producing ciphertext that can be bound straight into a `WHERE`; an input that **looks like** an application-side payload (shape + length gate) raises `Error::WrongFormat` |
+| `seal(plaintext)` | Unconditional encryption — the escape hatch for the shape check's false-positive ceiling |
+| `decrypt(payload)` | Restores both current (`0x04`) and legacy (`0x02`) formats (for migration and the CLI, **not for queries**) |
+| `decrypt_expr(column, driver)` | Emits the SQL fragment that lets the database decrypt for itself (a CASE dispatching both key generations, so mixed columns during migration read in one statement) |
 | `decrypt_expr_default(column)` | Same, with the dialect taken from the construction-time configuration |
-| `is_encrypted(value)` | Shape check |
-| `key_hex()` / `driver()` / `cipher_name()` | Diagnostics |
+| `is_encrypted(value)` | Shape check (both generations) |
+| `key_hex()` / `derived_key_hex()` / `driver()` / `cipher_name()` | Diagnostics; the first is the primary key, the second the current (`0x04`) subkey, both in hex |
 
 The input is a string rather than a type envelope — see the previous section.
 
@@ -259,19 +287,27 @@ The input is a string rather than a type envelope — see the previous section.
 | Environment | `EnvConfig::from_env()` | `ENCRYPTION_KEY` / `ENCRYPTION_CIPHER` / `ENCRYPTION_PREVIOUS_KEYS` / `ENCRYPTION_DB_DRIVER`, variable names character-for-character identical to the PHP version, so ops deployment scripts can be copied over |
 | Tests | `EnvConfig::from_env_with(\|k\| ...)` | Injects the getter function and touches no process environment — `set_var` is `unsafe` in Rust 2024, and it data-races with threads reading env vars concurrently |
 
-Accepted spellings for the key: a literal exactly the length the cipher requires, exactly 64 hex characters (decoded as 32 bytes), or a `base64:` prefix. The three spellings are equivalent; `encryptable keygen` prints two of the usable spellings (hex and the `base64:` prefix) — bare base64 does not work, since 44 characters counted as a literal is 44 bytes, and the length check rejects it.
+Accepted spellings for the key: a literal exactly the length the cipher requires, a hex string exactly **twice** the length the cipher requires (64 characters for a 256-bit cipher, 32 for a 128-bit one), or a `base64:` prefix. The spellings are equivalent; `encryptable keygen` prints two of the usable spellings (hex and the `base64:` prefix) — bare base64 does not work, since 44 characters counted as a literal is 44 bytes, and the length check rejects it.
 
 ### SQL fragments
 
+`decrypt_expr` emits a CASE that dispatches on the format byte across both key generations, so a mixed column reads in one statement during migration:
+
 ```sql
 -- MySQL / MariaDB
-CONVERT( AES_DECRYPT( SUBSTRING( FROM_BASE64(phone), 2 ), UNHEX('<hex>') ) USING 'UTF8' )
+CASE SUBSTRING( FROM_BASE64(phone), 1, 1 )
+  WHEN 0x04 THEN CONVERT( AES_DECRYPT( SUBSTRING( FROM_BASE64(phone), 2 ), UNHEX('<subkey hex>') ) USING 'UTF8' )
+  WHEN 0x02 THEN CONVERT( AES_DECRYPT( SUBSTRING( FROM_BASE64(phone), 2 ), UNHEX('<primary key hex>') ) USING 'UTF8' )
+  ELSE NULL END
 
 -- PostgreSQL (pgcrypto)
-convert_from( decrypt( substring( decode(phone, 'base64') from 2 ), '\x<hex>'::bytea, 'aes-ecb' ), 'UTF8' )
+CASE get_byte( decode(phone, 'base64'), 0 )
+  WHEN 4 THEN convert_from( decrypt( substring( decode(phone, 'base64') from 2 ), '\x<subkey hex>'::bytea, 'aes-ecb' ), 'UTF8' )
+  WHEN 2 THEN convert_from( decrypt( substring( decode(phone, 'base64') from 2 ), '\x<primary key hex>'::bytea, 'aes-ecb' ), 'UTF8' )
+  ELSE NULL END
 ```
 
-`SUBSTRING(..., 2)` strips the version byte. Column names first pass an allowlist (first character a letter or underscore, the rest letters, digits, underscores or dots, and a dot must sit between two segments), so the fragment contains no user-controllable string at all.
+`SUBSTRING(..., 2)` strips the version byte. Column names first pass an allowlist (first character a letter or underscore, the rest letters, digits, underscores or dots, and a dot must sit between two segments), so the fragment contains no user-controllable string at all. Once every legacy row has been moved to `0x04`, you can hand-write a statement carrying only the subkey (`derived_key_hex()`) and take the primary key out of the SQL — until then both CASE branches are needed.
 
 ### Optional serde integration (`--features serde`)
 
@@ -296,7 +332,8 @@ use encryptable::config::ArrayConfig;
 use encryptable::Guard;
 
 let guard = Guard::new(&ArrayConfig::new("<32-byte key>"))?;
-// attach a DB side too if you need one (the DB side demands a deterministic cipher, so it gets its own config)
+// attach a DB side too if you need one (the DB side demands a deterministic cipher, so it gets its own config).
+// The primary key can be shared outright: each path derives its own HKDF subkey, so sharing is safe — and recommended.
 let guard = guard.with_db(&ArrayConfig::new("<the same key>").with_cipher("aes-256-ecb"))?;
 ```
 
@@ -335,7 +372,7 @@ impl Guarded for AppState {
 
 ```toml
 [dependencies]
-encryptable-rust = { version = "0.1", features = ["axum"] }
+encryptable-rust = { version = "1", features = ["axum"] }
 ```
 
 **[bee-rust](https://github.com/erikwang2013/bee-rust) and [e-cat](https://github.com/erikwang2013/e-cat) both sit on top of axum 0.8**: the former's routing takes axum handlers directly (state also goes through axum's `State`, so the `Guarded` path works unchanged); the latter's HTTP transport is axum and its middleware is tower, so the guard shape is simply "put a value into the request extensions". Both need only a thin layer.
@@ -360,9 +397,9 @@ The following are boundaries that are **known and deliberately kept**. Read the 
 
 The same plaintext always produces the same ciphertext, which is the reason the DB path exists and also its price. On low-cardinality columns (gender, status, province, VIP or not) encryption ends up **almost as good as none** — an attacker needs no key: count how often each ciphertext appears and the distribution is restored; the rest is guessed from common sense. This path should only be used on columns that must be queryable by original value; everything else goes through the application side.
 
-### `decrypt_expr` embeds the primary key into SQL text
+### `decrypt_expr` embeds keys into SQL text
 
-The `UNHEX('<hex>')` / `'\x<hex>'::bytea` in the fragment *is* the primary key, so it lands in slow query logs, `pg_stat_statements`, and anywhere else statements are recorded. The key entering as hex rather than as a quoted string at least removes the path where one missed escape becomes injection — but **the leak itself is not solved**.
+The `UNHEX('<hex>')` / `'\x<hex>'::bytea` in the fragment are keys (during migration the CASE carries both generations: primary key + subkey), so they land in slow query logs, `pg_stat_statements`, and anywhere else statements are recorded. Keys entering as hex rather than as quoted strings at least removes the path where one missed escape becomes injection — but **the leak itself is not solved**. Once the legacy rows are all `0x04`, switch to a hand-written statement carrying only the subkey and take the primary key out of the SQL.
 
 The recommended practice is not to use it for filtering: compute the ciphertext from the input with `encrypt()` first, then bind it as a parameter (`WHERE phone = ?`). That neither exposes the key nor forfeits the index on that column — wrapping the column name in `decrypt_expr` kills the index outright. `decrypt_expr` is for "I want plaintext in the `SELECT` list" and reporting scenarios.
 
@@ -386,13 +423,15 @@ This is **deliberate**, not "just not done yet": the envelope was redesigned (ha
 
 ### `is_encrypted` is a cheap shape check with false positives
 
-It only does base64 decoding + version byte + minimum length; it **touches no key and does no authentication**. Plaintext whose base64-decoded first byte happens to be `0x01` (or `0x02`) is judged to be ciphertext, with probability around 1/256. When you truly need a definite answer, use `decrypt` (which really does authenticate once).
+It only does a length gate + base64 decoding + version byte + minimum length; it **touches no key and does no authentication**. Plaintext whose base64-decoded first byte happens to be a format byte (application side `0x03`/`0x01`, DB side `0x04`/`0x02`) is judged to be ciphertext — around 2/256, and it must be valid base64 besides. When you truly need a definite answer, use `decrypt` (which really does authenticate once).
+
+The two **false-rejection** gates have ceilings too. `DbEncrypter::encrypt` refuses inputs that are ≥ 40 characters and look like application-side payloads — short `AQ…`-style business codes are no longer caught by mistake (that used to be a hard defect), but long-enough lookalikes still are; the escape hatch is `seal()`. The reverse direction, application-side `encrypt()`, deliberately refuses nothing (see "Key separation" above).
 
 Incidentally: `encrypt()` does **not** use the shape check internally to decide "should this be encrypted again" — it genuinely attempts a decryption, precisely to avoid the pit the PHP version fell into (plaintext that looks like ciphertext being stored as-is and never decryptable again).
 
 ### The DB path ignores `previous_keys`
 
-DB-side ciphertext recognises only the primary key. Rotating DB-side ciphertext goes through an upper-layer migration (rewriting the whole column), not the key ring — the hex key embedded in the SQL fragment is the primary key, and the other keys on the ring mean nothing to it.
+DB-side ciphertext recognises only the key it was constructed with. Rotating DB-side ciphertext goes through an upper-layer migration (rewriting the whole column), not the key ring — the key embedded in the SQL fragment is what counts, and the other keys on the ring mean nothing to it. When the config carries `previous_keys`, `DbEncrypter::new` prints a warning to stderr: following the application-side rotation playbook on DB-side columns leaves the SQL side silently NULL (MySQL) or erroring (pgcrypto).
 
 ### The birthday bound on GCM nonces
 
@@ -404,9 +443,9 @@ Ciphertext uses **standard base64**, whose alphabet contains `/` and `+`. Put it
 
 To put ciphertext into a URL (path or query string), first switch to the base64url alphabet: `+`→`-`, `/`→`_`, and switch back on receipt. This is not this library's restriction, it is the URL's: any standard base64 going into a URL must be handled this way. The payload itself usually belongs in the request body, not the URL.
 
-### No KDF: the key must be exactly the length the cipher requires
+### No passphrase stretching: the key must be exactly the length the cipher requires
 
-Keys are raw bytes — no salt, no iteration — so a captured ciphertext can be brute-forced at high speed. A weak passphrase therefore does not get "stretched" into a key; it is rejected outright with `Error::KeyLength` (a 16-byte key against a 32-byte cipher is likewise rejected). Generate keys with `encryptable keygen`; do not type them yourself. One more consequence: a **literal** key of exactly 64 hex characters is interpreted as hex, not as a 64-byte literal — this is so ops has a representation identical to the one in the SQL fragment.
+The primary key is raw bytes — no salt, no iteration — because it is a **high-entropy random key**, not a passphrase. (The internal HKDF does purpose separation, not passphrase stretching.) A weak passphrase therefore does not get "stretched" into a key; it is rejected outright with `Error::KeyLength` (a 16-byte key against a 32-byte cipher is likewise rejected). Generate keys with `encryptable keygen`; do not type them yourself. One more consequence: a hex string exactly **twice** the cipher's key length is interpreted as hex, not as a literal (64 characters for a 256-bit cipher, 32 for a 128-bit one) — this gives ops a representation identical to the one in the SQL fragment, and lets `to_hex()` round-trip back through the parser.
 
 ---
 
@@ -417,7 +456,7 @@ Keys are raw bytes — no salt, no iteration — so a captured ciphertext can be
 Only three things happen as a request crosses the framework integration layer:
 
 1. **Routing**: the framework matches a handler in its own way.
-2. **Extraction**: the adapter layer calls [`Guarded::guard()`](../../../src/integrations/mod.rs), cloning the `Arc` once. **This step never fails** — the guard comes from state, so if it compiles, it is there.
+2. **Extraction**: the adapter layer pulls the [`Guard`] from the framework's state slot, cloning the `Arc` once. The axum path goes through `Guarded` from state — failing to do so is a compile-time matter; the other frameworks (`app_data` / `manage` / `data` / `Depot` / request extensions) can discover a missing registration at runtime, and that is translated into a 500 naming the missing step.
 3. **Encryption/decryption**: the handler holds `guard` and works with it. The key ring was resolved at **startup**; nowhere along this path is an environment variable read, a string parsed, or a key derived.
 
 What is worth remembering is **where failures happen**:
@@ -439,13 +478,14 @@ The first row is the server's own assembly error; the user did nothing wrong, so
 ### Application side: one round trip
 
 ```
-write  plaintext / scalar → Value type envelope(tag || payload) → AES-GCM(random nonce, AAD = version byte)
-       → 0x01 || nonce || ciphertext || tag → base64 → store
-read   base64 → version byte check(0x01) → minimum length → try GCM authentication with each key in turn
+write  plaintext / scalar → Value type envelope(tag || payload) → AES-GCM(random nonce,
+       AAD = version byte [‖ context], key = HKDF subkey)
+       → 0x03 || nonce || ciphertext || tag → base64 → store
+read   base64 → version byte check(0x03 / 0x01) → minimum length → try GCM authentication with each key in turn
        → the first one that succeeds yields the plaintext → Value::decode → back to the original type
 ```
 
-The ring is ordered primary first, retired keys after. It deliberately **does not tell the caller** which key decrypted the payload — leaking "the Nth key" would leak the rotation's progress.
+The ring is ordered primary first, retired keys after; each key's own subkey was derived at construction. It deliberately **does not tell the caller** which key decrypted the payload — leaking "the Nth key" would leak the rotation's progress.
 
 ### DB side: the two query paths
 
@@ -511,6 +551,11 @@ app.rotate_to_current_key(&c)?;           // rotate: read with the old key, writ
 app.cipher_name(); app.ring_len();
 app.decrypt_or_original("plain");         // the lenient version, an explicit choice
 
+// block ciphertext transplanting across rows/columns: the context goes into the AAD
+let sealed = app.seal_with_context("users/42.phone", "13800138000")?;
+app.decrypt_text_with_context("users/42.phone", &sealed)?;
+app.decrypt(&sealed).is_err();            // without the context it will not open — a feature
+
 // DB side — only for columns that must be queried by original value
 let db = DbEncrypter::new(
     &ArrayConfig::new("0123456789abcdef0123456789abcdef")
@@ -521,7 +566,8 @@ let db = DbEncrypter::new(
 let bound = db.encrypt("13800138000")?;   // deterministic, can be bound into WHERE
 let plain = db.decrypt(&bound)?;          // for migration / CLI use
 db.decrypt_expr("phone", DbDriver::Mysql)?;   // returns the SQL fragment string; the driver argument picks the dialect
-db.is_encrypted(&bound); db.key_hex(); db.driver();
+db.seal(plaintext_lookalike)?;            // escape hatch when the shape check refuses a long input
+db.is_encrypted(&bound); db.key_hex(); db.derived_key_hex(); db.driver();
 ```
 
 Rotation:
@@ -576,7 +622,7 @@ cargo clippy --all-targets -- -D warnings
 cargo fmt --all -- --check
 ```
 
-The default build has **146 tests passing** (plus 1 that is `#[ignore]`d by default and needs a real MySQL), and `--features serde` gives **152**. Each framework feature brings its own set of adapter tests (3–7 of them), compiled only when that feature is on:
+The default build has **181 tests passing** (plus 1 that is `#[ignore]`d by default and needs a real MySQL), `--features serde` gives **187**, and all features together (including the eight adapter suites and their doc examples) give **233**. Each framework feature brings its own set of adapter tests, compiled only when that feature is on:
 
 ```bash
 cargo test --features axum        # one set per framework
@@ -597,7 +643,7 @@ ENCRYPTION_TEST_MYSQL=mysql://user:pass@localhost/db cargo test --test db_sql --
 
 There are two correctness anchors:
 
-- **Golden vectors: byte-for-byte alignment with OpenSSL.** The DB path's PKCS#7 + ECB is hand-written, and `matches_openssl_byte_for_byte` in `src/encrypter/db.rs` pins it to the output of `openssl enc -aes-256-ecb` (the vector is produced by `printf 'hello' | openssl enc -aes-256-ecb -K 000102…1f -nosalt | base64 -w0`, with version byte `0x02` prepended and then base64). This is the only CI-verifiable proxy for "can the database read the bytes we write" — one padding block short, one byte-order slip, and this test goes red.
+- **Golden vectors: byte-for-byte alignment with an independent implementation.** The DB path's PKCS#7 + ECB is hand-written, and two sets of golden vectors in `src/encrypter/db/tests.rs` pin it down: the current format (`0x04`, HKDF subkey) is recomputed independently with Python's `cryptography` and cross-checked against `openssl enc -aes-256-ecb -K <subkey> -nosalt`; the 1.2.x `0x02` vectors (raw primary key) became the **dual-read regression anchor** — decrypt-only, guaranteeing old ciphertext still opens. This is the only CI-verifiable proxy for "can the database read the bytes we write" — one padding block short, one byte-order slip, and this test goes red.
 - **Properties: `tests/invariants.rs`.** Having given up byte-level interop with PHP, this crate has no ready-made cross-language vector to align with; instead there is a set of invariants: round-trip identity, tampering always rejected, wrong key always rejected, random nonces never repeating, DB-path determinism, and the two payload kinds never working with each other. The corpora are generated by a hand-written LCG rather than `proptest` / `quickcheck` — deterministic, reproducible, zero dependencies.
 
 The whole rotation migration path (swap the primary key → old key into the ring → batch move → removal) is in `tests/rotation.rs`.
