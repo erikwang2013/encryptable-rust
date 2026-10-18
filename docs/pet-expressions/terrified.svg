@@ -1,0 +1,112 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 320 360" width="320" height="360" role="img" aria-label="Locky · 惊恐 Terrified"><title>Locky · 惊恐 Terrified</title><desc>Locky 的 惊恐 表情形态 · animated expression form</desc><style>
+.ex-motion { animation: ex-tremble 0.18s ease-in-out infinite; transform-box: fill-box; transform-origin: 50% 50%; }
+.ex-anim-tear { animation: ex-tear 1.8s ease-in infinite; transform-box: fill-box; transform-origin: center; }
+.ex-anim-sweat { animation: ex-tear 1.5s ease-in infinite; transform-box: fill-box; transform-origin: center; }
+.ex-anim-heart { animation: ex-heart 2.2s ease-out infinite; transform-box: fill-box; transform-origin: center; }
+.ex-anim-spark { animation: ex-spark 1.9s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+.ex-anim-rain { animation: ex-rain 1.4s linear infinite; transform-box: fill-box; transform-origin: center; }
+.ex-anim-confetti { animation: ex-confetti 2.4s linear infinite; transform-box: fill-box; transform-origin: center; }
+.ex-anim-pulse { animation: ex-pulse 1.6s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+.ex-anim-knock { animation: ex-knock 0.55s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+.ex-anim-knockline { animation: ex-knockline 0.55s ease-out infinite; transform-box: fill-box; transform-origin: center; }
+.ex-anim-palm { animation: ex-palm 0.9s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+.ex-anim-steam { animation: ex-steam 1.8s ease-out infinite; transform-box: fill-box; transform-origin: center; }
+.ex-anim-shock { animation: ex-shock 0.5s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+.ex-anim-please { animation: ex-please 1.4s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+.ex-anim-drift { animation: ex-drift 4.5s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
+@keyframes ex-tremble { 0%,100% { transform: translate(0,0); } 25% { transform: translate(-3.68px,2.02px); } 50% { transform: translate(3.68px,-2.02px); } 75% { transform: translate(-2.94px,2.02px); } }
+@keyframes ex-tear { 0% { transform: translateY(0); opacity: 0; } 18% { opacity: 1; } 100% { transform: translateY(12.65px); opacity: 0; } }
+@keyframes ex-heart { 0% { transform: translateY(0) scale(.65); opacity: 0; } 20% { opacity: 1; } 100% { transform: translateY(-20.7px) scale(1.15); opacity: 0; } }
+@keyframes ex-spark { 0%,100% { transform: scale(.6) rotate(0deg); opacity: .3; } 50% { transform: scale(1.15) rotate(25deg); opacity: 1; } }
+@keyframes ex-rain { 0% { transform: translateY(0); opacity: 0; } 20% { opacity: 1; } 100% { transform: translateY(13.8px); opacity: 0; } }
+@keyframes ex-confetti { 0% { transform: translateY(-4.02px) rotate(0deg); opacity: 1; } 100% { transform: translateY(18.4px) rotate(200deg); opacity: 0; } }
+@keyframes ex-pulse { 0%,100% { transform: scale(1); opacity: .35; } 50% { transform: scale(1.18); opacity: .7; } }
+@keyframes ex-knock { 0%,100% { transform: translateX(5.17px); } 35% { transform: translateX(0); } }
+@keyframes ex-knockline { 0%,100% { transform: scaleX(.6); opacity: .35; } 35% { transform: scaleX(1); opacity: 1; } }
+@keyframes ex-palm { 0%,100% { transform: translateY(0) rotate(0deg); } 50% { transform: translateY(-1.38px) rotate(-4deg); } }
+@keyframes ex-steam { 0% { transform: translateY(0); opacity: .7; } 100% { transform: translateY(-10.35px); opacity: 0; } }
+@keyframes ex-shock { 0%,100% { transform: scaleX(.7); opacity: .4; } 50% { transform: scaleX(1.25); opacity: 1; } }
+@keyframes ex-please { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-2.07px); } }
+@keyframes ex-drift { 0%,100% { transform: translateY(0); } 50% { transform: translateY(-2.3px); } }
+@media (prefers-reduced-motion: reduce) {
+  .ex-motion, [class*="ex-anim-"] { animation: none !important; }
+}
+</style><g class="ex-motion ex-terrified"><g class="ex-base"><defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#312E81"/>
+      <stop offset="1" stop-color="#5B21B6"/>
+    </linearGradient>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FFFFFF"/>
+      <stop offset="1" stop-color="#DBE2FF"/>
+    </linearGradient>
+    <linearGradient id="keyGold" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#FDE68A"/>
+      <stop offset="1" stop-color="#F59E0B"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="320" height="360" rx="72" fill="url(#bg)"/>
+
+  <g opacity="0.55" fill="#C7D2FE">
+    <circle cx="52" cy="72" r="3.5"/>
+    <circle cx="272" cy="118" r="2.5"/>
+    <circle cx="248" cy="52" r="4"/>
+    <circle cx="70" cy="228" r="2.5"/>
+    <circle cx="286" cy="252" r="3"/>
+  </g>
+
+  <g transform="translate(0,-10)">
+    
+    <ellipse cx="128" cy="282" rx="23" ry="12" fill="#C7D2FE" stroke="#1E1B4B" stroke-width="4"/>
+    <ellipse cx="192" cy="282" rx="23" ry="12" fill="#C7D2FE" stroke="#1E1B4B" stroke-width="4"/>
+
+    
+    <path d="M104 158 A56 56 0 0 1 216 158" fill="none" stroke="#1E1B4B" stroke-width="18" stroke-linecap="round"/>
+
+    
+    <g transform="rotate(-30 160 94)">
+      <circle cx="160" cy="101" r="9" fill="#94A3B8" stroke="#1E1B4B" stroke-width="3"/>
+      <rect x="157.5" y="105" width="5" height="30" rx="2.5" fill="#94A3B8" stroke="#1E1B4B" stroke-width="3"/>
+      <rect x="162.5" y="119" width="8" height="5" rx="2" fill="#94A3B8"/>
+      <rect x="162.5" y="127" width="6" height="5" rx="2" fill="#94A3B8"/>
+    </g>
+    <g transform="rotate(30 160 94)">
+      <circle cx="160" cy="101" r="9" fill="#94A3B8" stroke="#1E1B4B" stroke-width="3"/>
+      <rect x="157.5" y="105" width="5" height="30" rx="2.5" fill="#94A3B8" stroke="#1E1B4B" stroke-width="3"/>
+      <rect x="162.5" y="119" width="8" height="5" rx="2" fill="#94A3B8"/>
+      <rect x="162.5" y="127" width="6" height="5" rx="2" fill="#94A3B8"/>
+    </g>
+    <g>
+      <circle cx="160" cy="101" r="9.5" fill="url(#keyGold)" stroke="#1E1B4B" stroke-width="3"/>
+      <rect x="157.5" y="105" width="5" height="32" rx="2.5" fill="url(#keyGold)" stroke="#1E1B4B" stroke-width="3"/>
+      <rect x="162.5" y="127" width="9" height="5.5" rx="2" fill="#F59E0B"/>
+      <rect x="162.5" y="136" width="6.5" height="5.5" rx="2" fill="#F59E0B"/>
+    </g>
+
+    
+    <rect x="80" y="146" width="160" height="128" rx="34" fill="url(#body)" stroke="#1E1B4B" stroke-width="4"/>
+
+    
+    <rect x="62" y="198" width="26" height="54" rx="13" fill="#E8EDFF" stroke="#1E1B4B" stroke-width="4"/>
+    <rect x="232" y="198" width="26" height="54" rx="13" fill="#E8EDFF" stroke="#1E1B4B" stroke-width="4"/>
+    <circle cx="75" cy="258" r="14" fill="#E8EDFF" stroke="#1E1B4B" stroke-width="4"/>
+    <circle cx="245" cy="258" r="14" fill="#E8EDFF" stroke="#1E1B4B" stroke-width="4"/>
+
+    
+    <path d="M100 240 h26 v12 c0 10 -13 16 -13 16 s-13 -6 -13 -16 z" fill="#10B981" stroke="#1E1B4B" stroke-width="3"/>
+    <path d="M107 251 l4.5 4.5 l9.5 -9.5" fill="none" stroke="#FFFFFF" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+    
+    <ellipse cx="132" cy="194" rx="10" ry="13" fill="#1E1B4B"/>
+    <ellipse cx="188" cy="194" rx="10" ry="13" fill="#1E1B4B"/>
+    <circle cx="135.5" cy="189" r="3.2" fill="#FFFFFF"/>
+    <circle cx="184.5" cy="189" r="3.2" fill="#FFFFFF"/>
+    <ellipse cx="104" cy="214" rx="11" ry="6" fill="#FB7185" opacity="0.45"/>
+    <ellipse cx="216" cy="214" rx="11" ry="6" fill="#FB7185" opacity="0.45"/>
+    <circle cx="160" cy="214" r="10.5" fill="#1E1B4B"/>
+    <path d="M153.5 220 h13 l4 15 h-21 z" fill="#1E1B4B"/>
+  </g>
+
+  <text x="160" y="314" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="19" font-weight="600" fill="#E0E7FF" letter-spacing="1.5">Locky · 小锁灵</text>
+  <text x="160" y="338" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#A5B4FC" letter-spacing="1">Encryptable · project pet 项目宠物</text></g><g class="ex-face"><ellipse cx="160" cy="199" rx="42" ry="34" fill="#E8EDFF"/><path d="M 122.22,166.18 Q 132,161.57 141.78,166.18" fill="none" stroke="#1E1B4B" stroke-width="1.61" stroke-linecap="round"/><path d="M 178.22,166.18 Q 188,161.57 197.78,166.18" fill="none" stroke="#1E1B4B" stroke-width="1.61" stroke-linecap="round"/><ellipse cx="132" cy="184" rx="12.88" ry="15.87" fill="#FFFFFF" stroke="#1E1B4B" stroke-width="1.84"/><ellipse cx="132" cy="184" rx="6.18" ry="8.73" fill="#1E1B4B"/><circle cx="129.17" cy="179.56" r="2.58" fill="#FFFFFF"/><ellipse cx="188" cy="184" rx="12.88" ry="15.87" fill="#FFFFFF" stroke="#1E1B4B" stroke-width="1.84"/><ellipse cx="188" cy="184" rx="6.18" ry="8.73" fill="#1E1B4B"/><circle cx="185.17" cy="179.56" r="2.58" fill="#FFFFFF"/><ellipse cx="160" cy="209.3" rx="8.99" ry="12.01" fill="#4A1D2E" stroke="#1E1B4B" stroke-width="1.47"/><ellipse cx="160" cy="213.85" rx="4.76" ry="4.97" fill="#FF6B8A"/><g transform="translate(0 0)"><path class="ex-anim-sweat" style="animation-delay:0.2s" d="M 203.53,165.72 C 208.36,173.44 208.36,180.53 203.53,180.53 C 198.69,180.53 198.69,173.44 203.53,165.72 Z" fill="#6FB2F0"/><circle cx="203.53" cy="173.12" r="1.42" fill="#FFFFFF" opacity=".8"/></g><g transform="translate(0 0)"><path class="ex-anim-sweat" style="animation-delay:0.2s" d="M 208.7,178.25 C 212.15,183.77 212.15,188.83 208.7,188.83 C 205.25,188.83 205.25,183.77 208.7,178.25 Z" fill="#6FB2F0"/><circle cx="208.7" cy="183.54" r="1.01" fill="#FFFFFF" opacity=".8"/></g><circle class="ex-anim-pulse" cx="160" cy="184" r="53.26" fill="none" stroke="#9B7BFF" stroke-width="4.79" opacity=".35"/><g transform="translate(106.74 145.34) rotate(-25)"><path class="ex-anim-shock" style="animation-delay:0.0s" d="M 0 0 L 6.33 0" stroke="#9B7BFF" stroke-width="1.61" stroke-linecap="round"/></g><g transform="translate(213.26 145.34) rotate(25)"><path class="ex-anim-shock" style="animation-delay:0.08s" d="M 0 0 L 6.33 0" stroke="#9B7BFF" stroke-width="1.61" stroke-linecap="round"/></g><g transform="translate(103.31 205.47) rotate(-12)"><path class="ex-anim-shock" style="animation-delay:0.16s" d="M 0 0 L 6.33 0" stroke="#9B7BFF" stroke-width="1.61" stroke-linecap="round"/></g><g transform="translate(216.69 205.47) rotate(12)"><path class="ex-anim-shock" style="animation-delay:0.24s" d="M 0 0 L 6.33 0" stroke="#9B7BFF" stroke-width="1.61" stroke-linecap="round"/></g></g></g></svg>
