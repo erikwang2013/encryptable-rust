@@ -50,7 +50,7 @@ aes = { version = "0.8", features = ["zeroize"] }
 # `Zeroizing` 包装类型，那在 `zeroize` 本体里。开着一个用不上的 proc-macro
 # feature 只是白编译。
 zeroize = "1"
-base64 = "0.22"
+base64 = "0.23"
 # 密钥分离（HKDF-SHA256）：DB 侧的确定性 ECB 是一条 E_K(·) 加密预言机，与 GCM 同住
 # 一把主密钥会同时拆掉机密性与完整性（完整论证见 src/support/subkeys.rs）。
 # 两个都是纯 Rust 小依赖，与 security-rust 的极简取向一致。
@@ -114,7 +114,7 @@ ecat = ["axum", "dep:tower", "dep:http"]
 
 [dev-dependencies]
 # 集成测试要拆载荷看字节，直接用主依赖的同一个 base64（同一个版本，不额外拉包）
-base64 = "0.22"
+base64 = "0.23"
 
 # 只给框架适配层的测试用（各自 feature 打开时才编译那些测试）。这些是
 # dev-dependencies，不会进使用者的依赖图。
