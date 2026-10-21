@@ -80,7 +80,7 @@ jobs:
       # 自行决定（例如 salvo 1.0.1 声明需要 rustc 1.94）—— 那不属于本 crate
       # 的 1.88 承诺。八个 feature 与全部框架代码的编译验证由上面 Feature 矩阵
       # 与 Clippy（stable、all-features）负责。
-      - uses: dtolnay/rust-toolchain@1.88
+      - uses: dtolnay/rust-toolchain@1.120
       - uses: Swatinem/rust-cache@v2
       - run: cargo check --locked --all-targets
 
