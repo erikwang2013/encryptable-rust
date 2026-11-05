@@ -94,7 +94,7 @@ pub mod integrations;
 pub mod key;
 pub mod pet;
 pub mod serializer;
-pub mod support;
+mod support;
 
 /// 可选的 serde 集成，只在 `serde` feature 打开时编译。
 #[cfg(feature = "serde")]

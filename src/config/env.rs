@@ -12,7 +12,7 @@ use super::{DbDriver, EncryptableConfig};
 use crate::support::previous_keys;
 
 /// 环境变量名 —— 部署脚本里写的就是这几个名字，不必改名。
-pub mod vars {
+pub(crate) mod vars {
     /// 主密钥。
     pub const KEY: &str = "ENCRYPTION_KEY";
     /// 密码，默认 `aes-256-gcm`。

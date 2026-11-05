@@ -371,7 +371,7 @@ impl Guarded for AppState {
 
 ```toml
 [dependencies]
-encryptable-rust = { version = "1", features = ["axum"] }
+encryptable-rust = { version = "2", features = ["axum"] }
 ```
 
 **[bee-rust](https://github.com/erikwang2013/bee-rust) and [e-cat](https://github.com/erikwang2013/e-cat) both sit on top of axum 0.8**: the former's routing takes axum handlers directly (state also goes through axum's `State`, so the `Guarded` path works unchanged); the latter's HTTP transport is axum and its middleware is tower, so the guard shape is simply "put a value into the request extensions". Both need only a thin layer.
@@ -662,35 +662,6 @@ If this project helps you, a donation is welcome (entirely voluntary).
 | Alipay | WeChat Pay |
 |--------|------------|
 | ![Alipay](../../alipay.png) | ![WeChat Pay](../../weixinpay.png) |
-
-### Global transfer (international wire)
-
-**Recipient details**
-- Recipient name: WANG KEXUN
-- Recipient account number: 881015918251
-
-**Receiving bank**
-- ZA Bank SWIFT Code: AABLHKHHXXX
-- Bank name: ZA Bank Limited
-- Bank code: 387
-- Bank address: Core F, Cyberport 3, 100 Cyberport Road, Hong Kong
-
-**Cross-border correspondent bank (if required)**
-
-Please note that this is cross-border correspondent (intermediary) bank information, not the receiving bank's. Ask your sending bank whether correspondent bank information needs to be supplied.
-
-For incoming transfers in HKD, CNY and USD, the correspondent bank is Citibank:
-- Bank name: Citibank N.A. Hong Kong
-- SWIFT Code: CITIHKHXXXX
-- Bank code: 006
-- Branch name: Hong Kong Branch
-- Branch code: 391
-- Bank address: Citibank Tower, Citibank Plaza, 3 Garden Road, Central, Hong Kong
-
-For incoming transfers in other currencies, the correspondent bank is BNY Mellon:
-- Bank name: THE BANK OF NEW YORK MELLON
-- SWIFT Code: IRVTUS3NXXX
-- Bank address: THE BANK OF NEW YORK MELLON, 240 GREENWICH STREET, NEW YORK, United States
 
 ---
 

@@ -2,7 +2,7 @@
 
 [package]
 name = "encryptable-rust"
-version = "1.3.0"
+version = "2.0.0"
 edition = "2024"
 rust-version = "1.88"
 description = "为敏感字段提供「可检索的匿名化 / 加密」能力：写入数据库前加密，读出时解密，并可生成与 MySQL / PostgreSQL 兼容的 SQL 片段"
@@ -12,17 +12,14 @@ authors = ["erik <erik@erik.xyz>"]
 keywords = ["encryption", "aes-gcm", "database", "key-rotation", "pii"]
 categories = ["cryptography", "database"]
 readme = "README.md"
-
-# docs.rs 默认只按默认 feature（空集）构建，八个框架集成模块与 serde API
-# 在线上文档里会整个消失。全开构建 + 本地 `-D warnings` 验证过干净。
-[package.metadata.docs.rs]
-all-features = true
-
 # 随包只发「读代码 / 用库」要用的东西。`docs/pet.svg` 绝不能排 —— src/pet.rs 用
 # include_str! 内联它，排掉就编译不过（cargo package 会当场报错，不会静默漏发）。
+# 必须留在 [package] 里：放在任何子表头之后会被 TOML 归进那张子表，静默失效。
 exclude = [
     "CLAUDE.md",   # 仓库的 agent 配置，与使用者无关
     "AGENTS.md",
+    ".github",     # CI / dependabot 配置，只在仓库里有意义
+    ".gitignore",
     "ruvector.db",
     ".swarm",
     ".claude-flow",
@@ -31,6 +28,11 @@ exclude = [
     "docs/social-preview.png",
     "docs/social-preview.svg",
 ]
+
+# docs.rs 默认只按默认 feature（空集）构建，八个框架集成模块与 serde API
+# 在线上文档里会整个消失。全开构建 + 本地 `-D warnings` 验证过干净。
+[package.metadata.docs.rs]
+all-features = true
 
 [lib]
 name = "encryptable"

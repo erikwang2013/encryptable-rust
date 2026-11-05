@@ -69,11 +69,14 @@ impl Guard {
     ///
     /// # Errors
     ///
-    /// 与 [`Guard::new`] 相同。注意读的是**进程环境**；测试里请改用
+    /// 与 [`Guard::new`] 相同，外加 `ENCRYPTION_PREVIOUS_KEYS` 写成 JSON 数组时的
+    /// [`crate::Error::Serialize`]（这条错误在 [`EnvConfig::from_env`] 里会 panic，这里
+    /// 不跟着 panic）。注意读的是**进程环境**；测试里请改用
     /// [`Guard::new`] 配 [`EnvConfig::from_env_with`](crate::config::EnvConfig::from_env_with)，
     /// 免得与并行跑的其他测试争抢进程环境。
     pub fn from_env() -> Result<Self> {
-        Self::new(&EnvConfig::from_env())
+        let config = EnvConfig::from_env_with(|k| std::env::var(k).ok())?;
+        Self::new(&config)
     }
 
     /// 再挂上 DB 侧加密器。

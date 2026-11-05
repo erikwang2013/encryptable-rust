@@ -172,6 +172,21 @@ fn db_commands_round_trip_deterministically() {
     assert_eq!(plain, "13800138000");
 }
 
+/// 配置格式错误要落退出码 2，而不是 panic 的 101。
+#[test]
+fn malformed_previous_keys_is_a_config_error() {
+    let (code, _, stderr) = run(
+        &["encrypt"],
+        &[
+            ("ENCRYPTION_KEY", KEY_HEX),
+            ("ENCRYPTION_PREVIOUS_KEYS", r#"["a","b"]"#),
+        ],
+        Some("x"),
+    );
+    assert_eq!(code, 2, "配置错误该落 2：{stderr}");
+    assert!(stderr.contains("逗号分隔"), "{stderr}");
+}
+
 /// `sql` 命令的片段形状与告警：密钥进 SQL 的提醒走 stderr，片段本身走 stdout。
 #[test]
 fn sql_command_warns_on_stderr_and_prints_fragment_on_stdout() {

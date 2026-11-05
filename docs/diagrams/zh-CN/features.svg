@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1020 720" role="img" aria-labelledby="t d" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1020 720" role="img" aria-labelledby="t d" font-family="'Noto Sans SC','Source Han Sans SC',sans-serif">
   <title id="t">功能设计</title>
   <desc id="d">九张功能卡片：应用侧 AEAD、DB 侧确定性加密、SQL 片段生成、密钥轮换、类型信封、双格式隔离、8 个框架集成、CLI 工具、项目宠物 Locky。页脚注明默认依赖只有 4 个。</desc>
 
@@ -33,7 +33,7 @@
   <rect x="60" y="262" width="48" height="5" rx="2.5" fill="#5B21B6"/>
   <text x="60" y="290" font-size="15" font-weight="700" fill="#312E81">密钥轮换 Key rotation</text>
   <text x="60" y="320" font-size="12" fill="#475569">主密钥 + previous_keys 环</text>
-  <text x="60" y="340" font-family="ui-monospace,SFMono-Regular,Menlo,Consolas,monospace" font-size="12" fill="#64748B">rotate_to_current_key · 零停机</text>
+  <text x="60" y="340" font-family="'DejaVu Sans Mono','Noto Sans Mono',monospace" font-size="12" fill="#64748B">rotate_to_current_key · 零停机</text>
 
   <!-- 5. 类型信封 -->
   <rect x="361" y="242" width="298" height="120" rx="14" fill="#FFFFFF" stroke="#C7D2FE" stroke-width="1.5"/>

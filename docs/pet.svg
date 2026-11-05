@@ -79,6 +79,6 @@
     <path d="M153.5 220 h13 l4 15 h-21 z" fill="#1E1B4B"/>
   </g>
 
-  <text x="160" y="314" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="19" font-weight="600" fill="#E0E7FF" letter-spacing="1.5">Locky · 小锁灵</text>
-  <text x="160" y="338" text-anchor="middle" font-family="ui-sans-serif,-apple-system,'Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif" font-size="12" fill="#A5B4FC" letter-spacing="1">Encryptable · project pet 项目宠物</text>
+  <text x="160" y="314" text-anchor="middle" font-family="'Noto Sans SC','Source Han Sans SC',sans-serif" font-size="19" font-weight="600" fill="#E0E7FF" letter-spacing="1.5">Locky · 小锁灵</text>
+  <text x="160" y="338" text-anchor="middle" font-family="'Noto Sans SC','Source Han Sans SC',sans-serif" font-size="12" fill="#A5B4FC" letter-spacing="1">Encryptable · project pet 项目宠物</text>
 </svg>

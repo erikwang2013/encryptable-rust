@@ -5,6 +5,43 @@
 本文件记录本 crate 的显著变更，格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 版本号遵循 [语义化版本](https://semver.org/lang/zh-CN/)。
 
+## [2.0.0] - 2026-11-05
+
+破坏性清理 + 依赖安全更新。**密文格式没有变化，2.0 不需要迁移数据。**
+
+### 破坏性变更
+
+- `support` 模块不再对外公开（`support::previous_keys` 同上）—— 它一直是内部
+  设施，未出现在公开文档里。依赖它的下游请改用 `EnvConfig` / 配置文件。
+- 移除未使用的公开常量 `Cipher::BLOCK_LEN`（`DbEncrypter` 内部有自己的私有常量）。
+
+### 安全
+
+- `cargo audit`：15 个漏洞 + 21 个 unsound 警告 → 1 个漏洞。更新 zstd 0.13.4 /
+  0.14.3、zstd-safe 7.4.0 / 8.2.0、zstd-sys 2.1.2、rustls 0.23.46、
+  rustls-webpki 0.103.16、webpki-roots 1.0.11、webpki-root-certs 1.0.10、
+  tokio 1.54.1；rocket 0.5.2（脱离 hyper 0.14 / h2 0.3）。
+- 剩余 1 个无法在本库修复：h2 0.3.27（RUSTSEC-2026-0258，空 DATA 帧 DoS），
+  来自 `actix-web` 的可选集成路径。h2 0.3.x 没有修复版，actix-http 3.20 仍锁
+  `^0.3.27`；默认构建不含该依赖，启用 `actix-web` feature 的构建需等上游修复。
+
+### 修复
+
+- `Guard::from_env()` 与 CLI 不再在 `ENCRYPTION_PREVIOUS_KEYS` 写成 JSON 数组时
+  panic：前者返回 `Error::Serialize`，后者按退出码契约落 2。新增 CLI 回归测试。
+- `Cargo.toml` 的 `exclude` 此前写在 `[package.metadata.docs.rs]` 之后，被 TOML
+  归入子表而**从未生效** —— crate 包会夹带 `CLAUDE.md` 与社交预览图。已移回
+  `[package]`，并顺带排除 `.github`、`.gitignore`。
+
+### 文档与资产
+
+- 21 个 SVG 中的商业字体名（Segoe UI、Microsoft YaHei、SFMono-Regular、Menlo、
+  Consolas）替换为开源字体（Noto Sans SC / Source Han Sans SC / DejaVu Sans Mono /
+  Noto Sans Mono）。
+- 移除英文 README 中与中文版重复暴露的个人银行账户信息；清理 `ASSETS-LICENSE.md`
+  与 README 中指向仓库不存在内容的引用（Go Gopher、emoji 项目字体路径）。
+- 安装示例的依赖版本改为 `"2"`。
+
 ## [1.3.0] - 2026-10-11
 
 一次深度安全评审后的版本，核心是**密钥分离**。密文格式换代到 `0x03`/`0x04`，
@@ -285,6 +322,7 @@
 
 运行时只有 4 个：`aes-gcm` · `aes` · `zeroize` · `base64`。
 
+[2.0.0]: https://github.com/erikwang2013/encryptable-rust/releases/tag/v2.0.0
 [1.3.0]: https://github.com/erikwang2013/encryptable-rust/releases/tag/v1.3.0
 [1.2.1]: https://github.com/erikwang2013/encryptable-rust/releases/tag/v1.2.1
 [1.2.0]: https://github.com/erikwang2013/encryptable-rust/releases/tag/v1.2.0

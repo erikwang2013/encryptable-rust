@@ -136,7 +136,9 @@ impl From<Error> for CliError {
 
 /// 从环境变量取配置，密钥缺失时给出可操作的提示。
 fn config() -> Result<EnvConfig, CliError> {
-    let config = EnvConfig::from_env();
+    // 不用 `EnvConfig::from_env()`：它在 ENCRYPTION_PREVIOUS_KEYS 格式错误时
+    // panic，而 CLI 的契约是配置错误落退出码 2，不是 101。
+    let config = EnvConfig::from_env_with(|k| std::env::var(k).ok())?;
     if config.key().is_none() {
         return Err(CliError::Usage(
             "没有读到 ENCRYPTION_KEY。可以先跑 `encryptable keygen` 生成一把，\n\

@@ -121,7 +121,7 @@ SVG / PNG）**不是开源资产**，版权归作者所有。未经书面许可�
 用于商业用途；商业使用需取得商业授权，联系 **erik@erik.xyz**。详见
 [ASSETS-LICENSE.md](ASSETS-LICENSE.md)。
 
-> 代码部分仍遵循仓库原有 `LICENSE`；第三方素材（如明确标注的 Go Gopher 等）仍遵循其原许可证。
+> 代码部分仍遵循仓库原有 `LICENSE`；第三方素材仍遵循其原许可证。
 <!-- assets-license:end -->
 
 
@@ -395,7 +395,7 @@ impl Guarded for AppState {
 
 ```toml
 [dependencies]
-encryptable-rust = { version = "1", features = ["axum"] }
+encryptable-rust = { version = "2", features = ["axum"] }
 ```
 
 **bee-rust 与 e-cat 都在 axum 0.8 之上**：前者路由直接接收 axum handler（状态也走 axum 的 `State`，所以 `Guarded` 那条路原样可用）；后者 HTTP 传输层是 axum、中间件是 tower，所以 guard 形态就是「往请求扩展里塞一个值」。两处都只需薄薄一层。
@@ -686,37 +686,6 @@ cargo run --example quickstart
 | 支付宝 | 微信支付 |
 |--------|---------|
 | ![支付宝](docs/alipay.png) | ![微信支付](docs/weixinpay.png) |
-
-### 全球转账（国际汇款）
-
-【收款人信息】
-- 收款人姓名：WANG KEXUN
-- 收款账户号码：881015918251
-
-【收款银行】
-- ZA Bank SWIFT Code：AABLHKHHXXX
-- 银行名称：ZA Bank Limited
-- 银行编号：387
-- 银行地址：Core F, Cyberport 3, 100 Cyberport Road, Hong Kong
-
-【跨境汇款代理银行（如需）】
-
-请留意，此为跨境汇款代理银行（中转银行）信息，非收款银行信息。请向汇款银行查询是否需要提供跨境汇款代理银行信息。
-
-汇入港元、人民币及美元的代理银行为 Citibank：
-- 银行名称：Citibank N.A. Hong Kong
-- SWIFT Code：CITIHKHXXXX
-- 银行编号：006
-- 分行名称：Hong Kong Branch
-- 分行编号：391
-- 银行地址：Citibank Tower, Citibank Plaza, 3 Garden Road, Central, Hong Kong
-
-汇入其他币种时的代理银行为 BNY Mellon：
-- 银行名称：THE BANK OF NEW YORK MELLON
-- SWIFT Code：IRVTUS3NXXX
-- 银行地址：THE BANK OF NEW YORK MELLON, 240 GREENWICH STREET, NEW YORK, United States
-
----
 
 ## 许可
 

@@ -76,9 +76,6 @@ impl Cipher {
     pub fn is_deterministic(self) -> bool {
         matches!(self, Self::Aes256Ecb | Self::Aes128Ecb)
     }
-
-    /// 该密码的分组长度，恒为 16。
-    pub const BLOCK_LEN: usize = 16;
 }
 
 impl FromStr for Cipher {
